@@ -4,7 +4,10 @@ namespace MultiWebView;
 
 public sealed class ProfileStore
 {
-    private const string DefaultProfilesPath = @"I:\multi-webview\profiles";
+    public static readonly string DefaultProfilesPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "MultiWebView",
+        "Profiles");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -180,6 +183,6 @@ public sealed class ProfileStore
 
     private sealed class ProfileStoreSettings
     {
-        public string ProfilesPath { get; set; } = DefaultProfilesPath;
+        public string ProfilesPath { get; set; } = ProfileStore.DefaultProfilesPath;
     }
 }

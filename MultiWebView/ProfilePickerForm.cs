@@ -380,7 +380,9 @@ public sealed class ProfilePickerForm : Form
         using var dialog = new FolderBrowserDialog
         {
             Description = "Choose where Multi WebView profiles should be saved.",
-            SelectedPath = Directory.Exists(profileStore.AppDataPath) ? profileStore.AppDataPath : @"I:\multi-webview"
+            SelectedPath = Directory.Exists(profileStore.AppDataPath)
+                ? profileStore.AppDataPath
+                : ProfileStore.DefaultProfilesPath
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK)
