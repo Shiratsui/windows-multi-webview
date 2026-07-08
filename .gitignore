@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.agents/
+profile-picker-render.png
+
+# WebView2 runtime/profile data should live in %LOCALAPPDATA%\MultiWebView,
+# not inside the repository.
+*.WebView2/
