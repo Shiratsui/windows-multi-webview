@@ -10,8 +10,13 @@ public sealed class ProfilePickerForm : Form
     private const int HtCaption = 0x2;
 
     private readonly ProfileStore profileStore = new();
+    private readonly HashSet<string> selectedProfileIds = [];
+    private readonly HashSet<string> openProfileIds = [];
+    private readonly Dictionary<string, Panel> profileCards = [];
+    private readonly List<Form> openWindows = [];
     private readonly FlowLayoutPanel profileList = new();
     private readonly TextBox profileNameTextBox = new();
+    private ActionButtonControl? createMultiViewButton;
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
@@ -31,6 +36,7 @@ public sealed class ProfilePickerForm : Form
         Size = new Size(900, 620);
         BackColor = Color.FromArgb(20, 20, 20);
         Font = new Font("Segoe UI", 10F);
+        SetFormIcon(this);
 
         BuildLayout();
         BuildTitleBar();
@@ -82,6 +88,15 @@ public sealed class ProfilePickerForm : Form
         titleBar.BringToFront();
     }
 
+    private static void SetFormIcon(Form form)
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
+        if (File.Exists(iconPath))
+        {
+            form.Icon = new Icon(iconPath);
+        }
+    }
+
     private Button CreateTitleButton(string text, Action onClick, bool isClose = false)
     {
         var button = new Button
@@ -108,7 +123,7 @@ public sealed class ProfilePickerForm : Form
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(40, 52, 40, 28),
-            RowCount = 4,
+            RowCount = 5,
             ColumnCount = 1,
             BackColor = Color.FromArgb(20, 20, 20)
         };
@@ -116,6 +131,7 @@ public sealed class ProfilePickerForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(root);
 
@@ -145,6 +161,15 @@ public sealed class ProfilePickerForm : Form
         profileList.BackColor = Color.FromArgb(20, 20, 20);
         root.Controls.Add(profileList, 0, 2);
 
+        createMultiViewButton = new ActionButtonControl("Create multi-view", OpenMultiView)
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            Margin = new Padding(0, 0, 0, 0),
+            Visible = false
+        };
+        root.Controls.Add(createMultiViewButton, 0, 3);
+
         var addPanel = new TableLayoutPanel
         {
             Height = 36,
@@ -159,7 +184,7 @@ public sealed class ProfilePickerForm : Form
         addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
         addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
         addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
-        root.Controls.Add(addPanel, 0, 3);
+        root.Controls.Add(addPanel, 0, 4);
 
         var profileNameHost = new Panel
         {
@@ -210,6 +235,8 @@ public sealed class ProfilePickerForm : Form
     private void LoadProfiles()
     {
         profileList.Controls.Clear();
+        profileCards.Clear();
+        selectedProfileIds.RemoveWhere(openProfileIds.Contains);
 
         foreach (var profile in profileStore.LoadProfiles())
         {
@@ -230,10 +257,11 @@ public sealed class ProfilePickerForm : Form
             Height = 156,
             Margin = new Padding(0, 0, 16, 16),
             BackColor = Color.FromArgb(30, 30, 30),
-            Cursor = Cursors.Hand,
+            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand,
             Tag = profile
         };
-        card.Click += (_, _) => OpenProfile(profile);
+        card.Click += (_, _) => ToggleProfileSelection(profile);
+        profileCards[profile.Id] = card;
 
         var avatar = new Label
         {
@@ -244,9 +272,9 @@ public sealed class ProfilePickerForm : Form
             BackColor = Color.FromArgb(70, 70, 70),
             Size = new Size(58, 58),
             Location = new Point(76, 38),
-            Cursor = Cursors.Hand
+            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
         };
-        avatar.Click += (_, _) => OpenProfile(profile);
+        avatar.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(avatar);
 
         var name = new Label
@@ -258,9 +286,9 @@ public sealed class ProfilePickerForm : Form
             AutoEllipsis = true,
             Size = new Size(180, 24),
             Location = new Point(15, 100),
-            Cursor = Cursors.Hand
+            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
         };
-        name.Click += (_, _) => OpenProfile(profile);
+        name.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(name);
 
         var lastUsed = new Label
@@ -272,9 +300,9 @@ public sealed class ProfilePickerForm : Form
             AutoEllipsis = true,
             Size = new Size(186, 20),
             Location = new Point(12, 126),
-            Cursor = Cursors.Hand
+            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
         };
-        lastUsed.Click += (_, _) => OpenProfile(profile);
+        lastUsed.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(lastUsed);
 
         var editButton = new Button
@@ -290,7 +318,10 @@ public sealed class ProfilePickerForm : Form
         };
         editButton.FlatAppearance.BorderColor = Color.FromArgb(75, 75, 75);
         editButton.FlatAppearance.BorderSize = 1;
-        editButton.Click += (_, _) => EditProfile(profile);
+        editButton.Click += (_, _) =>
+        {
+            EditProfile(profile);
+        };
         card.Controls.Add(editButton);
 
         var deleteButton = new Button
@@ -306,11 +337,21 @@ public sealed class ProfilePickerForm : Form
         };
         deleteButton.FlatAppearance.BorderColor = Color.FromArgb(120, 55, 55);
         deleteButton.FlatAppearance.BorderSize = 1;
-        deleteButton.Click += (_, _) => DeleteProfile(profile);
+        deleteButton.Click += (_, _) =>
+        {
+            DeleteProfile(profile);
+        };
         card.Controls.Add(deleteButton);
 
-        card.MouseEnter += (_, _) => card.BackColor = Color.FromArgb(42, 42, 42);
-        card.MouseLeave += (_, _) => card.BackColor = Color.FromArgb(30, 30, 30);
+        card.MouseEnter += (_, _) =>
+        {
+            if (!selectedProfileIds.Contains(profile.Id) && !IsProfileOpen(profile))
+            {
+                card.BackColor = Color.FromArgb(42, 42, 42);
+            }
+        };
+        card.MouseLeave += (_, _) => UpdateProfileCardSelection(profile);
+        UpdateProfileCardSelection(profile);
 
         return card;
     }
@@ -387,18 +428,134 @@ public sealed class ProfilePickerForm : Form
         }
 
         profileStore.DeleteProfile(profile);
+        selectedProfileIds.Remove(profile.Id);
         LoadProfiles();
+        UpdateMultiViewButton();
     }
 
     private void OpenProfile(Profile profile, string? launchUrl = null)
     {
+        if (IsProfileOpen(profile))
+        {
+            return;
+        }
+
         profileStore.MarkUsed(profile);
 
-        using var browser = new BrowserForm(profile, profileStore, launchUrl);
-        Hide();
-        browser.ShowDialog(this);
+        var browser = new BrowserForm(profile, profileStore, launchUrl);
+        TrackOpenWindow(browser, [profile.Id]);
+        browser.Show(this);
+
         LoadProfiles();
-        Show();
+    }
+
+    private void ToggleProfileSelection(Profile profile)
+    {
+        if (IsProfileOpen(profile))
+        {
+            return;
+        }
+
+        if (!selectedProfileIds.Add(profile.Id))
+        {
+            selectedProfileIds.Remove(profile.Id);
+        }
+
+        UpdateProfileCardSelection(profile);
+        UpdateMultiViewButton();
+    }
+
+    private void UpdateProfileCardSelection(Profile profile)
+    {
+        if (!profileCards.TryGetValue(profile.Id, out var card))
+        {
+            return;
+        }
+
+        if (IsProfileOpen(profile))
+        {
+            card.BackColor = Color.FromArgb(38, 38, 38);
+            card.Cursor = Cursors.No;
+            return;
+        }
+
+        card.Cursor = Cursors.Hand;
+        card.BackColor = selectedProfileIds.Contains(profile.Id)
+            ? Color.FromArgb(25, 70, 115)
+            : Color.FromArgb(30, 30, 30);
+    }
+
+    private void UpdateMultiViewButton()
+    {
+        if (createMultiViewButton is null)
+        {
+            return;
+        }
+
+        var count = selectedProfileIds.Count;
+        createMultiViewButton.Visible = count > 0;
+        createMultiViewButton.Text = count == 1
+            ? "Create multi-view (1 profile)"
+            : $"Create multi-view ({count} profiles)";
+        createMultiViewButton.Invalidate();
+    }
+
+    private void OpenMultiView()
+    {
+        var selectedProfiles = profileStore
+            .LoadProfiles()
+            .Where(profile => selectedProfileIds.Contains(profile.Id) && !IsProfileOpen(profile))
+            .ToList();
+
+        if (selectedProfiles.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var profile in selectedProfiles)
+        {
+            profileStore.MarkUsed(profile);
+        }
+
+        var browser = new MultiViewForm(selectedProfiles, profileStore);
+        TrackOpenWindow(browser, selectedProfiles.Select(profile => profile.Id));
+        browser.Show(this);
+
+        selectedProfileIds.Clear();
+        LoadProfiles();
+        UpdateMultiViewButton();
+    }
+
+    private bool IsProfileOpen(Profile profile)
+    {
+        return openProfileIds.Contains(profile.Id);
+    }
+
+    private void TrackOpenWindow(Form window, IEnumerable<string> profileIds)
+    {
+        var ids = profileIds.ToList();
+        foreach (var id in ids)
+        {
+            openProfileIds.Add(id);
+            selectedProfileIds.Remove(id);
+        }
+
+        LoadProfiles();
+        UpdateMultiViewButton();
+
+        openWindows.Add(window);
+        window.FormClosed += (_, _) =>
+        {
+            openWindows.Remove(window);
+            foreach (var id in ids)
+            {
+                openProfileIds.Remove(id);
+            }
+
+            window.Dispose();
+            LoadProfiles();
+            UpdateMultiViewButton();
+        };
     }
 
     private void DragForm(object? sender, MouseEventArgs e)

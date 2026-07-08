@@ -51,6 +51,7 @@ public sealed class BrowserForm : Form
         BackColor = Color.FromArgb(20, 20, 20);
         MinimumSize = new Size(800, 450);
         Size = new Size(1200, 800);
+        SetFormIcon(this);
 
         Resize += (_, _) => UpdateMaxButtonIcon();
         Move += (_, _) => CheckMonitorChange();
@@ -91,6 +92,15 @@ public sealed class BrowserForm : Form
 
         btnClose = CreateTitleButton("✕", () => Close(), true);
         titleBar.Controls.Add(btnClose);
+    }
+
+    private static void SetFormIcon(Form form)
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
+        if (File.Exists(iconPath))
+        {
+            form.Icon = new Icon(iconPath);
+        }
     }
 
     private Button CreateTitleButton(string text, Action onClick, bool isClose = false)
