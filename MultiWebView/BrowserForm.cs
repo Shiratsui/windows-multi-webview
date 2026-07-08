@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace MultiWebView;
@@ -208,7 +207,7 @@ public sealed class BrowserForm : Form
     private async Task InitializeWebViewAsync()
     {
         var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
-        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+        var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
         await webView.EnsureCoreWebView2Async(environment);
         webView.Source = new Uri(launchUrl ?? profile.StartUrl);

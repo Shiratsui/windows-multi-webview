@@ -1,11 +1,12 @@
 using System.Runtime.InteropServices;
-using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace MultiWebView;
 
 public sealed class MultiViewForm : Form
 {
+    private const int TitleBarHeight = 36;
+
     private readonly IReadOnlyList<Profile> profiles;
     private readonly ProfileStore profileStore;
     private readonly List<WebView2> webViews = [];
@@ -54,7 +55,7 @@ public sealed class MultiViewForm : Form
     {
         var titleBar = new Panel
         {
-            Height = 36,
+            Height = TitleBarHeight,
             Dock = DockStyle.Top,
             BackColor = btnNormal
         };
@@ -129,6 +130,15 @@ public sealed class MultiViewForm : Form
         var columns = (int)Math.Ceiling(Math.Sqrt(count));
         var rows = (int)Math.Ceiling(count / (double)columns);
 
+        var contentPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, TitleBarHeight, 0, 0),
+            BackColor = Color.Black
+        };
+        Controls.Add(contentPanel);
+        contentPanel.SendToBack();
+
         var grid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -148,8 +158,7 @@ public sealed class MultiViewForm : Form
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
         }
 
-        Controls.Add(grid);
-        grid.SendToBack();
+        contentPanel.Controls.Add(grid);
 
         for (var index = 0; index < profiles.Count; index++)
         {
@@ -201,7 +210,7 @@ public sealed class MultiViewForm : Form
             var webView = webViews[index];
             var profile = profiles[index];
             var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
-            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+            var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
             await webView.EnsureCoreWebView2Async(environment);
             webView.Source = new Uri(profile.StartUrl);
