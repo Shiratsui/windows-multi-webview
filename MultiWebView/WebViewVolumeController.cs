@@ -6,51 +6,93 @@ namespace MultiWebView;
 public static class WebViewVolumeController
 {
     private const int ClsctxAll = 23;
+    private static readonly TimeSpan[] RetryDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(750),
+        TimeSpan.FromMilliseconds(1500)
+    ];
 
-    public static Task ConfigureAsync(WebView2 webView, Func<int> getVolumePercent, Func<bool> getMuted)
-    {
-        return ApplyAsync(webView, getVolumePercent(), getMuted());
-    }
-
-    public static Task ApplyAsync(WebView2 webView, int volumePercent, bool muted)
+    public static async Task ConfigureAsync(WebView2 webView, Func<int> getVolumePercent, Func<bool> getMuted)
     {
         if (webView.CoreWebView2 is null || webView.IsDisposed)
         {
-            return Task.CompletedTask;
+            return;
+        }
+
+        webView.CoreWebView2.NavigationCompleted += (_, _) =>
+        {
+            _ = ApplyAsync(webView, getVolumePercent(), getMuted());
+        };
+
+        webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
+        {
+            _ = ApplyAsync(webView, getVolumePercent(), getMuted());
+        };
+
+        await ApplyAsync(webView, getVolumePercent(), getMuted());
+    }
+
+    public static async Task ApplyAsync(WebView2 webView, int volumePercent, bool muted)
+    {
+        if (webView.CoreWebView2 is null || webView.IsDisposed)
+        {
+            return;
         }
 
         var volume = Math.Clamp(volumePercent, 0, 100) / 100f;
         webView.CoreWebView2.IsMuted = muted;
-        ApplyToAudioSessions(webView.CoreWebView2.BrowserProcessId, volume, muted);
-        return Task.CompletedTask;
+        var browserProcessId = webView.CoreWebView2.BrowserProcessId;
+
+        foreach (var delay in RetryDelays)
+        {
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay);
+            }
+
+            if (webView.CoreWebView2 is null || webView.IsDisposed)
+            {
+                return;
+            }
+
+            ApplyToAudioSessions(browserProcessId, volume, muted);
+        }
     }
 
     private static void ApplyToAudioSessions(uint browserProcessId, float volume, bool muted)
     {
-        var targetProcessIds = GetProcessTreeIds((int)browserProcessId);
-        var enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumerator();
-        enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device);
-
-        var sessionManagerId = typeof(IAudioSessionManager2).GUID;
-        device.Activate(ref sessionManagerId, ClsctxAll, IntPtr.Zero, out var sessionManagerObject);
-        var sessionManager = (IAudioSessionManager2)sessionManagerObject;
-        sessionManager.GetSessionEnumerator(out var sessionEnumerator);
-        sessionEnumerator.GetCount(out var sessionCount);
-
-        for (var index = 0; index < sessionCount; index++)
+        try
         {
-            sessionEnumerator.GetSession(index, out var sessionControl);
-            var sessionControl2 = (IAudioSessionControl2)sessionControl;
-            sessionControl2.GetProcessId(out var processId);
+            var targetProcessIds = GetProcessTreeIds((int)browserProcessId);
+            var enumerator = (IMMDeviceEnumerator)(object)new MMDeviceEnumerator();
+            enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out var device);
 
-            if (!targetProcessIds.Contains((int)processId))
+            var sessionManagerId = typeof(IAudioSessionManager2).GUID;
+            device.Activate(ref sessionManagerId, ClsctxAll, IntPtr.Zero, out var sessionManagerObject);
+            var sessionManager = (IAudioSessionManager2)sessionManagerObject;
+            sessionManager.GetSessionEnumerator(out var sessionEnumerator);
+            sessionEnumerator.GetCount(out var sessionCount);
+
+            for (var index = 0; index < sessionCount; index++)
             {
-                continue;
-            }
+                sessionEnumerator.GetSession(index, out var sessionControl);
+                var sessionControl2 = (IAudioSessionControl2)sessionControl;
+                sessionControl2.GetProcessId(out var processId);
 
-            var simpleAudioVolume = (ISimpleAudioVolume)sessionControl;
-            simpleAudioVolume.SetMasterVolume(volume, Guid.Empty);
-            simpleAudioVolume.SetMute(muted, Guid.Empty);
+                if (!targetProcessIds.Contains((int)processId))
+                {
+                    continue;
+                }
+
+                var simpleAudioVolume = (ISimpleAudioVolume)sessionControl;
+                simpleAudioVolume.SetMasterVolume(volume, Guid.Empty);
+                simpleAudioVolume.SetMute(muted, Guid.Empty);
+            }
+        }
+        catch (COMException)
+        {
         }
     }
 
