@@ -1,1 +1,92 @@
-# multi-webview
+# Multi WebView
+
+Multi WebView is a Windows desktop app for opening multiple isolated WebView2 browser profiles. It is useful when you need several signed-in browser sessions at the same time, such as multiple Google accounts, without mixing cookies or local browser data.
+
+## Features
+
+- Create named profiles with their own persistent WebView2 user data folders.
+- Open one profile in a dedicated borderless browser window.
+- Select multiple profiles and open them together in a tiled multi-view window.
+- Edit or delete saved profiles from the profile picker.
+- Change and open the profile storage folder from the app.
+- Minimize the profile picker to the system tray and restore it from the tray icon.
+- Keep windows on top with the pin button.
+- Single-instance startup: launching the app again focuses the existing picker.
+
+## Requirements
+
+- Windows
+- .NET SDK that supports `net10.0-windows`
+- Microsoft Edge WebView2 Runtime
+
+The app depends on the `Microsoft.Web.WebView2` NuGet package. Package restore is handled by the .NET SDK.
+
+## Build and Run
+
+From the repository root:
+
+```powershell
+dotnet restore .\MultiWebView.slnx
+dotnet build .\MultiWebView.slnx
+dotnet run --project .\MultiWebView\MultiWebView.csproj
+```
+
+## Publish
+
+Create a Windows x64 release build:
+
+```powershell
+dotnet publish .\MultiWebView\MultiWebView.csproj -c Release -r win-x64 --self-contained false
+```
+
+The published files are written to:
+
+```text
+MultiWebView\bin\Release\net10.0-windows\win-x64\publish
+```
+
+## Usage
+
+1. Start the app.
+2. Enter a profile name and optional start URL. Invalid or empty URLs fall back to `https://www.google.com/`.
+3. Click `Add profile` to create the profile and open it.
+4. Click a saved profile card to select it.
+5. Use `Create multi-view` to open selected profiles in one tiled window.
+6. Use the edit and delete buttons on a profile card to manage saved profiles.
+
+Profiles that are already open cannot be selected again until their browser window is closed.
+
+## Profile Storage
+
+By default, profiles are stored under:
+
+```text
+%LOCALAPPDATA%\MultiWebView\Profiles
+```
+
+The app also stores its settings at:
+
+```text
+%LOCALAPPDATA%\MultiWebView\settings.json
+```
+
+Each profile has a stable ID, display name, start URL, timestamps, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
+
+## Project Structure
+
+```text
+MultiWebView/
+  Program.cs                    App entry point and single-instance activation
+  ProfilePickerForm.cs          Main profile picker UI
+  BrowserForm.cs                Single-profile browser window
+  MultiViewForm.cs              Tiled multi-profile browser window
+  ProfileStore.cs               Profile persistence and storage settings
+  WebViewEnvironmentFactory.cs  WebView2 environment options
+  Profile.cs                    Profile model
+```
+
+## Notes
+
+- Browser windows use borderless custom title bars with minimize, maximize, close, refresh, and pin controls where applicable.
+- WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
+- Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
