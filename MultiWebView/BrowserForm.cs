@@ -22,12 +22,16 @@ public sealed class BrowserForm : Form
     private Button btnMin = null!;
     private Button btnMax = null!;
     private Button btnClose = null!;
+    private Button btnMute = null!;
+    private TrackBar volumeSlider = null!;
+    private Label volumeValue = null!;
     private PictureBox dragIcon = null!;
     private Label titleLabel = null!;
     private DateTime lastClickTime = DateTime.MinValue;
     private Rectangle previousBounds;
     private bool isMaximized;
     private bool isPinned;
+    private bool isMuted;
     private Screen currentScreen = null!;
 
     [DllImport("user32.dll")]
@@ -86,6 +90,8 @@ public sealed class BrowserForm : Form
         btnRefresh = CreateTitleButton("↻", () => RefreshWebView());
         titleBar.Controls.Add(btnRefresh);
 
+        titleBar.Controls.Add(CreateVolumePanel());
+
         btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
 
@@ -125,6 +131,67 @@ public sealed class BrowserForm : Form
         AddHoverEffect(btn, isClose);
 
         return btn;
+    }
+
+    private Panel CreateVolumePanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 178,
+            BackColor = btnNormal,
+            Padding = new Padding(4, 6, 8, 6)
+        };
+
+        volumeSlider = new TrackBar
+        {
+            Dock = DockStyle.Right,
+            Minimum = 0,
+            Maximum = 100,
+            Value = 100,
+            TickStyle = TickStyle.None,
+            AutoSize = false,
+            Width = 92,
+            Height = 24
+        };
+        volumeSlider.ValueChanged += (_, _) =>
+        {
+            volumeValue.Text = $"{volumeSlider.Value}%";
+            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
+        };
+        panel.Controls.Add(volumeSlider);
+
+        btnMute = new Button
+        {
+            Text = "🔊",
+            Dock = DockStyle.Right,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Width = 32
+        };
+        btnMute.FlatAppearance.BorderSize = 0;
+        btnMute.Click += (_, _) =>
+        {
+            isMuted = !isMuted;
+            btnMute.Text = isMuted ? "🔇" : "🔊";
+            btnMute.BackColor = isMuted ? btnActive : Color.FromArgb(38, 38, 38);
+            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
+        };
+        panel.Controls.Add(btnMute);
+
+        volumeValue = new Label
+        {
+            Text = "100%",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.Gainsboro,
+            BackColor = btnNormal,
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font("Segoe UI", 8F, FontStyle.Regular)
+        };
+        panel.Controls.Add(volumeValue);
+
+        return panel;
     }
 
     private PictureBox CreateDragIcon()
@@ -216,6 +283,7 @@ public sealed class BrowserForm : Form
         var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
         await webView.EnsureCoreWebView2Async(environment);
+        await WebViewVolumeController.ConfigureAsync(webView, () => volumeSlider.Value, () => isMuted);
         webView.Source = new Uri(launchUrl ?? profile.StartUrl);
 
         ToggleMaximize();
