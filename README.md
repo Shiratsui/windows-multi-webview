@@ -62,7 +62,9 @@ Profiles that are already open cannot be selected again until their browser wind
 
 Each browser header includes a mute button and volume slider. The setting is saved per profile, so reopening the same profile restores its last volume and mute state.
 
-Volume is applied through the Windows audio session for the WebView2 process tree. This avoids injecting JavaScript into the page and works for pages that use game audio or other browser audio paths instead of regular HTML media elements.
+Volume is applied through the Windows audio session for the WebView2 process tree and is reapplied while the WebView is open. This keeps the saved profile volume and mute state in place even if WebView2 recreates its audio sessions.
+
+When a WebView is initialized, the app creates an inaudible Web Audio session before the first navigation. This gives Windows Volume Mixer a session to display and lets the app apply the saved volume before the page plays real audio.
 
 ## Profile Storage
 
@@ -100,4 +102,4 @@ MultiWebView/
 - Browser windows use borderless custom title bars with minimize, maximize, close, refresh, and pin controls where applicable.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
-- Per-profile audio is controlled outside the page through Windows Core Audio sessions, so page scripts and Web Audio feature detection are left untouched.
+- Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

@@ -11,7 +11,8 @@ public static class WebViewEnvironmentFactory
         "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling " +
         "--enable-gpu-rasterization " +
         "--enable-zero-copy " +
-        "--ignore-gpu-blocklist";
+        "--ignore-gpu-blocklist " +
+        "--autoplay-policy=no-user-gesture-required";
 
     public static Task<CoreWebView2Environment> CreateAsync(string userDataFolder)
     {

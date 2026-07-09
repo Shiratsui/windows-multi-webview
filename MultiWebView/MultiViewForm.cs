@@ -259,13 +259,18 @@ public sealed class MultiViewForm : Form
         var tileWebView = webView;
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
+        WebViewVolumeController.Attach(
+            tileWebView,
+            () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
+            () => mutedByWebView.GetValueOrDefault(tileWebView),
+            () => profile.Name);
 
         volumeSlider.ValueChanged += (_, _) =>
         {
             volumeValue.Text = $"{volumeSlider.Value}%";
             volumeByWebView[tileWebView] = volumeSlider.Value;
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
-            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
+            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted, profile.Name);
         };
 
         muteButton.Click += (_, _) =>
@@ -275,7 +280,7 @@ public sealed class MultiViewForm : Form
             muteButton.Text = muted ? "🔇" : "🔊";
             muteButton.BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38);
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
-            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
+            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted, profile.Name);
         };
 
         tile.Controls.Add(tileWebView, 0, 1);
@@ -293,10 +298,12 @@ public sealed class MultiViewForm : Form
             var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
             await webView.EnsureCoreWebView2Async(environment);
+            await WebViewVolumeController.EnsureAudioSessionAsync(webView);
             await WebViewVolumeController.ConfigureAsync(
                 webView,
                 () => volumeByWebView.GetValueOrDefault(webView, 100),
-                () => mutedByWebView.GetValueOrDefault(webView));
+                () => mutedByWebView.GetValueOrDefault(webView),
+                () => profile.Name);
             webView.Source = new Uri(profile.StartUrl);
         }
     }

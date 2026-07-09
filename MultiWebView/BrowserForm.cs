@@ -157,7 +157,7 @@ public sealed class BrowserForm : Form
         {
             volumeValue.Text = $"{volumeSlider.Value}%";
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, isMuted);
-            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
+            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted, profile.Name);
         };
         panel.Controls.Add(volumeSlider);
 
@@ -177,7 +177,7 @@ public sealed class BrowserForm : Form
             btnMute.Text = isMuted ? "🔇" : "🔊";
             btnMute.BackColor = isMuted ? btnActive : Color.FromArgb(38, 38, 38);
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, isMuted);
-            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
+            _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted, profile.Name);
         };
         panel.Controls.Add(btnMute);
 
@@ -275,6 +275,7 @@ public sealed class BrowserForm : Form
             Dock = DockStyle.Fill
         };
 
+        WebViewVolumeController.Attach(webView, () => volumeSlider.Value, () => isMuted, () => profile.Name);
         contentPanel.Controls.Add(webView);
     }
 
@@ -284,7 +285,8 @@ public sealed class BrowserForm : Form
         var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
         await webView.EnsureCoreWebView2Async(environment);
-        await WebViewVolumeController.ConfigureAsync(webView, () => volumeSlider.Value, () => isMuted);
+        await WebViewVolumeController.EnsureAudioSessionAsync(webView);
+        await WebViewVolumeController.ConfigureAsync(webView, () => volumeSlider.Value, () => isMuted, () => profile.Name);
         webView.Source = new Uri(launchUrl ?? profile.StartUrl);
 
         ToggleMaximize();

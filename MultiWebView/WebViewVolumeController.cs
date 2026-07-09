@@ -7,15 +7,49 @@ public static class WebViewVolumeController
 {
     private const int ClsctxAll = 23;
     private const int ReapplyIntervalMs = 1000;
+    private const string SilentAudioSessionScript = """
+        (() => {
+            if (window.__multiWebViewSilentAudioSession) {
+                const existingContext = window.__multiWebViewSilentAudioSession.context;
+                if (existingContext && existingContext.state === 'suspended') {
+                    existingContext.resume().catch(() => {});
+                }
 
-    public static async Task ConfigureAsync(WebView2 webView, Func<int> getVolumePercent, Func<bool> getMuted)
+                return;
+            }
+
+            const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextConstructor) {
+                return;
+            }
+
+            const context = new AudioContextConstructor();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            gain.gain.value = 0;
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start();
+            context.resume().catch(() => {});
+
+            window.__multiWebViewSilentAudioSession = {
+                context,
+                oscillator,
+                gain
+            };
+        })();
+        """;
+
+    public static void Attach(
+        WebView2 webView,
+        Func<int> getVolumePercent,
+        Func<bool> getMuted,
+        Func<string> getDisplayName)
     {
-        if (webView.CoreWebView2 is null || webView.IsDisposed)
+        if (webView.IsDisposed)
         {
             return;
         }
-
-        await ApplyAsync(webView, getVolumePercent(), getMuted());
 
         var isApplying = false;
         var timer = new System.Windows.Forms.Timer
@@ -33,7 +67,7 @@ public static class WebViewVolumeController
             isApplying = true;
             try
             {
-                await ApplyAsync(webView, getVolumePercent(), getMuted());
+                await ApplyAsync(webView, getVolumePercent(), getMuted(), getDisplayName());
             }
             finally
             {
@@ -48,9 +82,30 @@ public static class WebViewVolumeController
         };
 
         timer.Start();
+        _ = ApplyAsync(webView, getVolumePercent(), getMuted(), getDisplayName());
     }
 
-    public static Task ApplyAsync(WebView2 webView, int volumePercent, bool muted)
+    public static Task ConfigureAsync(
+        WebView2 webView,
+        Func<int> getVolumePercent,
+        Func<bool> getMuted,
+        Func<string> getDisplayName)
+    {
+        return ApplyAsync(webView, getVolumePercent(), getMuted(), getDisplayName());
+    }
+
+    public static async Task EnsureAudioSessionAsync(WebView2 webView)
+    {
+        if (webView.CoreWebView2 is null || webView.IsDisposed)
+        {
+            return;
+        }
+
+        await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(SilentAudioSessionScript);
+        await webView.CoreWebView2.ExecuteScriptAsync(SilentAudioSessionScript);
+    }
+
+    public static Task ApplyAsync(WebView2 webView, int volumePercent, bool muted, string displayName)
     {
         if (webView.CoreWebView2 is null || webView.IsDisposed)
         {
@@ -60,11 +115,11 @@ public static class WebViewVolumeController
         var volume = Math.Clamp(volumePercent, 0, 100) / 100f;
         webView.CoreWebView2.IsMuted = muted;
         var browserProcessId = webView.CoreWebView2.BrowserProcessId;
-        ApplyToAudioSessions(browserProcessId, volume, muted);
+        ApplyToAudioSessions(browserProcessId, volume, muted, displayName);
         return Task.CompletedTask;
     }
 
-    private static void ApplyToAudioSessions(uint browserProcessId, float volume, bool muted)
+    private static void ApplyToAudioSessions(uint browserProcessId, float volume, bool muted, string displayName)
     {
         try
         {
@@ -90,6 +145,7 @@ public static class WebViewVolumeController
                 }
 
                 var simpleAudioVolume = (ISimpleAudioVolume)sessionControl;
+                sessionControl.SetDisplayName(displayName, Guid.Empty);
                 simpleAudioVolume.SetMasterVolume(volume, Guid.Empty);
                 simpleAudioVolume.SetMute(muted, Guid.Empty);
             }
@@ -229,7 +285,15 @@ public static class WebViewVolumeController
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IAudioSessionControl
     {
-        void NotImpl1();
+        void GetState(out int state);
+        void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string displayName);
+        void SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string displayName, Guid eventContext);
+        void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string iconPath);
+        void SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string iconPath, Guid eventContext);
+        void GetGroupingParam(out Guid groupingId);
+        void SetGroupingParam(Guid groupingId, Guid eventContext);
+        void RegisterAudioSessionNotification(IntPtr newNotifications);
+        void UnregisterAudioSessionNotification(IntPtr newNotifications);
     }
 
     [ComImport]
