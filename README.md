@@ -7,6 +7,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Create named profiles with their own persistent WebView2 user data folders.
 - Open one profile in a dedicated borderless browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
+- Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
 - Minimize the profile picker to the system tray and restore it from the tray icon.
@@ -52,9 +53,16 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 3. Click `Add profile` to create the profile and open it.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the edit and delete buttons on a profile card to manage saved profiles.
+6. Use the volume slider and mute button in each browser header to adjust that profile's audio.
+7. Use the edit and delete buttons on a profile card to manage saved profiles.
 
 Profiles that are already open cannot be selected again until their browser window is closed.
+
+## Audio Controls
+
+Each browser header includes a mute button and volume slider. The setting is saved per profile, so reopening the same profile restores its last volume and mute state.
+
+Volume is applied through the Windows audio session for the WebView2 process tree. This avoids injecting JavaScript into the page and works for pages that use game audio or other browser audio paths instead of regular HTML media elements.
 
 ## Profile Storage
 
@@ -70,7 +78,7 @@ The app also stores its settings at:
 %LOCALAPPDATA%\MultiWebView\settings.json
 ```
 
-Each profile has a stable ID, display name, start URL, timestamps, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
+Each profile has a stable ID, display name, start URL, timestamps, saved audio state, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
 
 ## Project Structure
 
@@ -82,6 +90,8 @@ MultiWebView/
   MultiViewForm.cs              Tiled multi-profile browser window
   ProfileStore.cs               Profile persistence and storage settings
   WebViewEnvironmentFactory.cs  WebView2 environment options
+  WebViewVolumeController.cs    Windows audio session volume control
+  VolumeSliderControl.cs        Custom-painted volume slider
   Profile.cs                    Profile model
 ```
 
@@ -90,3 +100,4 @@ MultiWebView/
 - Browser windows use borderless custom title bars with minimize, maximize, close, refresh, and pin controls where applicable.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
+- Per-profile audio is controlled outside the page through Windows Core Audio sessions, so page scripts and Web Audio feature detection are left untouched.
