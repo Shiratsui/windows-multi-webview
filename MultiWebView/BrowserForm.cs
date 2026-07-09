@@ -23,7 +23,7 @@ public sealed class BrowserForm : Form
     private Button btnMax = null!;
     private Button btnClose = null!;
     private Button btnMute = null!;
-    private TrackBar volumeSlider = null!;
+    private VolumeSliderControl volumeSlider = null!;
     private Label volumeValue = null!;
     private PictureBox dragIcon = null!;
     private Label titleLabel = null!;
@@ -48,6 +48,7 @@ public sealed class BrowserForm : Form
         this.profile = profile;
         this.profileStore = profileStore;
         this.launchUrl = launchUrl;
+        isMuted = profile.IsMuted;
 
         Text = "Lara WebView";
         currentScreen = Screen.FromHandle(Handle);
@@ -143,30 +144,29 @@ public sealed class BrowserForm : Form
             Padding = new Padding(4, 6, 8, 6)
         };
 
-        volumeSlider = new TrackBar
+        volumeSlider = new VolumeSliderControl
         {
             Dock = DockStyle.Right,
             Minimum = 0,
             Maximum = 100,
-            Value = 100,
-            TickStyle = TickStyle.None,
-            AutoSize = false,
+            Value = Math.Clamp(profile.VolumePercent, 0, 100),
             Width = 92,
             Height = 24
         };
         volumeSlider.ValueChanged += (_, _) =>
         {
             volumeValue.Text = $"{volumeSlider.Value}%";
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, isMuted);
             _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
         };
         panel.Controls.Add(volumeSlider);
 
         btnMute = new Button
         {
-            Text = "🔊",
+            Text = isMuted ? "🔇" : "🔊",
             Dock = DockStyle.Right,
             ForeColor = Color.White,
-            BackColor = Color.FromArgb(38, 38, 38),
+            BackColor = isMuted ? btnActive : Color.FromArgb(38, 38, 38),
             FlatStyle = FlatStyle.Flat,
             Width = 32
         };
@@ -176,13 +176,14 @@ public sealed class BrowserForm : Form
             isMuted = !isMuted;
             btnMute.Text = isMuted ? "🔇" : "🔊";
             btnMute.BackColor = isMuted ? btnActive : Color.FromArgb(38, 38, 38);
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, isMuted);
             _ = WebViewVolumeController.ApplyAsync(webView, volumeSlider.Value, isMuted);
         };
         panel.Controls.Add(btnMute);
 
         volumeValue = new Label
         {
-            Text = "100%",
+            Text = $"{volumeSlider.Value}%",
             Dock = DockStyle.Fill,
             ForeColor = Color.Gainsboro,
             BackColor = btnNormal,

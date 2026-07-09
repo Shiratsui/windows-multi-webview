@@ -43,7 +43,7 @@ public sealed class ProfileStore
 
         var json = File.ReadAllText(ProfilesPath);
         var profiles = JsonSerializer.Deserialize<List<Profile>>(json, JsonOptions) ?? [];
-        if (NormalizeProfileUrls(profiles))
+        if (NormalizeProfiles(profiles))
         {
             SaveProfiles(profiles);
         }
@@ -100,6 +100,28 @@ public sealed class ProfileStore
         selectedProfile.Name = trimmedName;
         profile.StartUrl = NormalizeStartUrl(startUrl);
         selectedProfile.StartUrl = profile.StartUrl;
+        SaveProfiles(profiles);
+    }
+
+    public void UpdateProfileAudio(Profile selectedProfile, int volumePercent, bool isMuted)
+    {
+        var normalizedVolume = Math.Clamp(volumePercent, 0, 100);
+        selectedProfile.VolumePercent = normalizedVolume;
+        selectedProfile.IsMuted = isMuted;
+
+        var profiles = LoadProfiles().ToList();
+        var profile = profiles.FirstOrDefault(item => item.Id == selectedProfile.Id);
+
+        if (profile is null)
+        {
+            profiles.Add(selectedProfile);
+        }
+        else
+        {
+            profile.VolumePercent = normalizedVolume;
+            profile.IsMuted = isMuted;
+        }
+
         SaveProfiles(profiles);
     }
 
@@ -174,7 +196,7 @@ public sealed class ProfileStore
         }
     }
 
-    private static bool NormalizeProfileUrls(IEnumerable<Profile> profiles)
+    private static bool NormalizeProfiles(IEnumerable<Profile> profiles)
     {
         var changed = false;
 
@@ -184,6 +206,13 @@ public sealed class ProfileStore
             if (profile.StartUrl != normalizedUrl)
             {
                 profile.StartUrl = normalizedUrl;
+                changed = true;
+            }
+
+            var normalizedVolume = Math.Clamp(profile.VolumePercent, 0, 100);
+            if (profile.VolumePercent != normalizedVolume)
+            {
+                profile.VolumePercent = normalizedVolume;
                 changed = true;
             }
         }

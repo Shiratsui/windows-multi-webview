@@ -217,7 +217,7 @@ public sealed class MultiViewForm : Form
 
         var volumeValue = new Label
         {
-            Text = "100%",
+            Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
             Dock = DockStyle.Fill,
             ForeColor = Color.Gainsboro,
             BackColor = Color.FromArgb(28, 28, 28),
@@ -226,27 +226,25 @@ public sealed class MultiViewForm : Form
         };
         header.Controls.Add(volumeValue, 1, 0);
 
-        var muted = false;
+        var muted = profile.IsMuted;
         var muteButton = new Button
         {
-            Text = "🔊",
+            Text = muted ? "🔇" : "🔊",
             Dock = DockStyle.Fill,
             ForeColor = Color.White,
-            BackColor = Color.FromArgb(38, 38, 38),
+            BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38),
             FlatStyle = FlatStyle.Flat,
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
         header.Controls.Add(muteButton, 2, 0);
 
-        var volumeSlider = new TrackBar
+        var volumeSlider = new VolumeSliderControl
         {
             Dock = DockStyle.Fill,
             Minimum = 0,
             Maximum = 100,
-            Value = 100,
-            TickStyle = TickStyle.None,
-            AutoSize = false,
+            Value = Math.Clamp(profile.VolumePercent, 0, 100),
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
@@ -259,13 +257,14 @@ public sealed class MultiViewForm : Form
             Dock = DockStyle.Fill
         };
         var tileWebView = webView;
-        volumeByWebView[tileWebView] = 100;
+        volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
 
         volumeSlider.ValueChanged += (_, _) =>
         {
             volumeValue.Text = $"{volumeSlider.Value}%";
             volumeByWebView[tileWebView] = volumeSlider.Value;
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
             _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
         };
 
@@ -275,6 +274,7 @@ public sealed class MultiViewForm : Form
             mutedByWebView[tileWebView] = muted;
             muteButton.Text = muted ? "🔇" : "🔊";
             muteButton.BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38);
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
             _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
         };
 
