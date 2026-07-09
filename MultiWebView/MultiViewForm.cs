@@ -10,6 +10,8 @@ public sealed class MultiViewForm : Form
     private readonly IReadOnlyList<Profile> profiles;
     private readonly ProfileStore profileStore;
     private readonly List<WebView2> webViews = [];
+    private readonly Dictionary<WebView2, int> volumeByWebView = [];
+    private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
@@ -186,26 +188,97 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(2),
             BackColor = Color.FromArgb(18, 18, 18)
         };
-        tile.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        tile.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         tile.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var header = new Label
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4,
+            RowCount = 1,
+            BackColor = Color.FromArgb(28, 28, 28),
+            Padding = new Padding(8, 3, 6, 3)
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
+
+        var nameLabel = new Label
         {
             Text = profile.Name,
             Dock = DockStyle.Fill,
             ForeColor = Color.White,
             BackColor = Color.FromArgb(28, 28, 28),
             TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(8, 0, 0, 0),
             Font = new Font("Segoe UI", 9F, FontStyle.Bold)
         };
+        header.Controls.Add(nameLabel, 0, 0);
+
+        var volumeValue = new Label
+        {
+            Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.Gainsboro,
+            BackColor = Color.FromArgb(28, 28, 28),
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font("Segoe UI", 8F, FontStyle.Regular)
+        };
+        header.Controls.Add(volumeValue, 1, 0);
+
+        var muted = profile.IsMuted;
+        var muteButton = new Button
+        {
+            Text = muted ? "🔇" : "🔊",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Margin = new Padding(4, 0, 2, 0)
+        };
+        muteButton.FlatAppearance.BorderSize = 0;
+        header.Controls.Add(muteButton, 2, 0);
+
+        var volumeSlider = new VolumeSliderControl
+        {
+            Dock = DockStyle.Fill,
+            Minimum = 0,
+            Maximum = 100,
+            Value = Math.Clamp(profile.VolumePercent, 0, 100),
+            Height = 24,
+            Margin = new Padding(4, 3, 0, 0)
+        };
+        header.Controls.Add(volumeSlider, 3, 0);
+
         tile.Controls.Add(header, 0, 0);
 
         webView = new WebView2
         {
             Dock = DockStyle.Fill
         };
-        tile.Controls.Add(webView, 0, 1);
+        var tileWebView = webView;
+        volumeByWebView[tileWebView] = volumeSlider.Value;
+        mutedByWebView[tileWebView] = muted;
+
+        volumeSlider.ValueChanged += (_, _) =>
+        {
+            volumeValue.Text = $"{volumeSlider.Value}%";
+            volumeByWebView[tileWebView] = volumeSlider.Value;
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
+            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
+        };
+
+        muteButton.Click += (_, _) =>
+        {
+            muted = !muted;
+            mutedByWebView[tileWebView] = muted;
+            muteButton.Text = muted ? "🔇" : "🔊";
+            muteButton.BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38);
+            profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
+            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted);
+        };
+
+        tile.Controls.Add(tileWebView, 0, 1);
 
         return tile;
     }
@@ -220,6 +293,10 @@ public sealed class MultiViewForm : Form
             var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
             await webView.EnsureCoreWebView2Async(environment);
+            await WebViewVolumeController.ConfigureAsync(
+                webView,
+                () => volumeByWebView.GetValueOrDefault(webView, 100),
+                () => mutedByWebView.GetValueOrDefault(webView));
             webView.Source = new Uri(profile.StartUrl);
         }
     }

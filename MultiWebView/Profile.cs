@@ -7,4 +7,6 @@ public sealed class Profile
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastUsedAt { get; set; } = DateTimeOffset.UtcNow;
     public string StartUrl { get; set; } = ProfileStore.DefaultStartUrl;
+    public int VolumePercent { get; set; } = 100;
+    public bool IsMuted { get; set; }
 }
