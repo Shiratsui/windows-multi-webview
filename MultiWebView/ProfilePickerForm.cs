@@ -5,7 +5,6 @@ namespace MultiWebView;
 
 public sealed class ProfilePickerForm : Form
 {
-    private const string GoogleSignInUrl = "https://accounts.google.com/";
     private const int WmNcButtonDown = 0xA1;
     private const int HtCaption = 0x2;
 
@@ -16,6 +15,7 @@ public sealed class ProfilePickerForm : Form
     private readonly List<Form> openWindows = [];
     private readonly FlowLayoutPanel profileList = new();
     private readonly TextBox profileNameTextBox = new();
+    private readonly TextBox profileUrlTextBox = new();
     private readonly NotifyIcon trayIcon = new();
     private ActionButtonControl? createMultiViewButton;
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
@@ -197,13 +197,14 @@ public sealed class ProfilePickerForm : Form
 
         var addPanel = new TableLayoutPanel
         {
-            Height = 36,
+            Height = 84,
             Dock = DockStyle.Fill,
-            RowCount = 1,
+            RowCount = 2,
             ColumnCount = 4,
             Margin = new Padding(0, 22, 0, 0),
             BackColor = Color.FromArgb(20, 20, 20)
         };
+        addPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         addPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));
@@ -238,6 +239,35 @@ public sealed class ProfilePickerForm : Form
         };
         profileNameHost.Controls.Add(profileNameTextBox);
         addPanel.Controls.Add(profileNameHost, 0, 0);
+
+        var profileUrlHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            MinimumSize = new Size(220, 36),
+            Margin = new Padding(0, 12, 0, 0),
+            Padding = new Padding(12, 8, 12, 0),
+            BackColor = Color.FromArgb(32, 32, 32),
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        profileUrlTextBox.Text = ProfileStore.DefaultStartUrl;
+        profileUrlTextBox.Dock = DockStyle.Fill;
+        profileUrlTextBox.Multiline = true;
+        profileUrlTextBox.Margin = Padding.Empty;
+        profileUrlTextBox.BackColor = Color.FromArgb(32, 32, 32);
+        profileUrlTextBox.ForeColor = Color.White;
+        profileUrlTextBox.BorderStyle = BorderStyle.None;
+        profileUrlTextBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                AddProfile();
+            }
+        };
+        profileUrlHost.Controls.Add(profileUrlTextBox);
+        addPanel.Controls.Add(profileUrlHost, 0, 1);
+        addPanel.SetColumnSpan(profileUrlHost, 4);
 
         var addProfileButton = CreateActionButton("Add profile", AddProfile);
         addProfileButton.Margin = new Padding(10, 0, 0, 0);
@@ -288,11 +318,8 @@ public sealed class ProfilePickerForm : Form
         card.Click += (_, _) => ToggleProfileSelection(profile);
         profileCards[profile.Id] = card;
 
-        var avatar = new Label
+        var avatar = new AvatarControl(GetInitials(profile.Name))
         {
-            Text = GetInitials(profile.Name),
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 18F, FontStyle.Bold),
             ForeColor = Color.White,
             BackColor = Color.FromArgb(70, 70, 70),
             Size = new Size(58, 58),
@@ -395,9 +422,10 @@ public sealed class ProfilePickerForm : Form
 
     private void AddProfile()
     {
-        var profile = profileStore.CreateProfile(profileNameTextBox.Text);
+        var profile = profileStore.CreateProfile(profileNameTextBox.Text, profileUrlTextBox.Text);
         profileNameTextBox.Clear();
-        OpenProfile(profile, GoogleSignInUrl);
+        profileUrlTextBox.Text = ProfileStore.DefaultStartUrl;
+        OpenProfile(profile);
     }
 
     private void ChangeProfileFolder()
@@ -431,13 +459,13 @@ public sealed class ProfilePickerForm : Form
 
     private void EditProfile(Profile profile)
     {
-        var newName = PromptForText("Edit profile", "Profile name", profile.Name);
-        if (newName is null)
+        var editedProfile = PromptForProfile(profile);
+        if (editedProfile is null)
         {
             return;
         }
 
-        profileStore.RenameProfile(profile, newName);
+        profileStore.UpdateProfile(profile, editedProfile.Value.Name, editedProfile.Value.StartUrl);
         LoadProfiles();
     }
 
@@ -707,61 +735,163 @@ public sealed class ProfilePickerForm : Form
         return string.IsNullOrWhiteSpace(initials) ? "?" : initials;
     }
 
-    private static string? PromptForText(string title, string labelText, string initialValue)
+    private static ProfileEditResult? PromptForProfile(Profile profile)
     {
         using var dialog = new Form
         {
-            Text = title,
+            Text = "Edit profile",
             StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
+            FormBorderStyle = FormBorderStyle.None,
             MinimizeBox = false,
             MaximizeBox = false,
-            ClientSize = new Size(360, 130),
-            BackColor = Color.FromArgb(30, 30, 30)
+            ClientSize = new Size(460, 242),
+            BackColor = Color.FromArgb(20, 20, 20),
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(1)
         };
+        SetFormIcon(dialog);
+
+        var titleBar = new Panel
+        {
+            Height = 36,
+            Dock = DockStyle.Top,
+            BackColor = Color.FromArgb(28, 28, 28)
+        };
+        dialog.Controls.Add(titleBar);
+
+        var titleLabel = new Label
+        {
+            Text = "Edit profile",
+            AutoSize = true,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            Location = new Point(14, 9)
+        };
+        titleBar.Controls.Add(titleLabel);
+
+        var closeButton = new Button
+        {
+            Text = "✕",
+            Dock = DockStyle.Right,
+            Size = new Size(40, 36),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White
+        };
+        closeButton.FlatAppearance.BorderSize = 0;
+        closeButton.Click += (_, _) => dialog.DialogResult = DialogResult.Cancel;
+        closeButton.MouseEnter += (_, _) => closeButton.BackColor = Color.FromArgb(232, 17, 35);
+        closeButton.MouseLeave += (_, _) => closeButton.BackColor = Color.FromArgb(28, 28, 28);
+        titleBar.Controls.Add(closeButton);
 
         var label = new Label
         {
-            Text = labelText,
+            Text = "Profile name",
             ForeColor = Color.White,
             AutoSize = true,
-            Location = new Point(16, 16)
+            Location = new Point(24, 58)
         };
         dialog.Controls.Add(label);
 
-        var textBox = new TextBox
-        {
-            Text = initialValue,
-            Location = new Point(16, 42),
-            Size = new Size(328, 24),
-            BackColor = Color.FromArgb(45, 45, 45),
-            ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        dialog.Controls.Add(textBox);
+        var nameTextBox = CreateDialogTextBox(profile.Name, new Point(24, 82), new Size(412, 24));
+        dialog.Controls.Add(nameTextBox);
 
-        var saveButton = new Button
+        var urlLabel = new Label
         {
-            Text = "Save",
-            DialogResult = DialogResult.OK,
-            Location = new Point(188, 86),
-            Size = new Size(74, 28)
+            Text = "Base URL",
+            ForeColor = Color.White,
+            AutoSize = true,
+            Location = new Point(24, 118)
+        };
+        dialog.Controls.Add(urlLabel);
+
+        var urlTextBox = CreateDialogTextBox(profile.StartUrl, new Point(24, 142), new Size(412, 24));
+        dialog.Controls.Add(urlTextBox);
+
+        ProfileEditResult? result = null;
+
+        void Save()
+        {
+            result = new ProfileEditResult(nameTextBox.Text, urlTextBox.Text);
+            dialog.DialogResult = DialogResult.OK;
+        }
+
+        var saveButton = new ActionButtonControl("Save", Save)
+        {
+            Location = new Point(272, 194),
+            Size = new Size(78, 32),
+            Dock = DockStyle.None
         };
         dialog.Controls.Add(saveButton);
 
-        var cancelButton = new Button
+        var cancelButton = new ActionButtonControl("Cancel", () => dialog.DialogResult = DialogResult.Cancel)
         {
-            Text = "Cancel",
-            DialogResult = DialogResult.Cancel,
-            Location = new Point(270, 86),
-            Size = new Size(74, 28)
+            Location = new Point(358, 194),
+            Size = new Size(78, 32),
+            Dock = DockStyle.None
         };
         dialog.Controls.Add(cancelButton);
 
-        dialog.AcceptButton = saveButton;
-        dialog.CancelButton = cancelButton;
-        textBox.SelectAll();
+        foreach (var textBox in new[] { nameTextBox, urlTextBox })
+        {
+            textBox.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    Save();
+                }
+            };
+        }
 
-        return dialog.ShowDialog() == DialogResult.OK ? textBox.Text : null;
+        dialog.Shown += (_, _) =>
+        {
+            nameTextBox.Focus();
+            nameTextBox.SelectAll();
+        };
+
+        return dialog.ShowDialog() == DialogResult.OK ? result : null;
+    }
+
+    private static TextBox CreateDialogTextBox(string text, Point location, Size size)
+    {
+        return new TextBox
+        {
+            Text = text,
+            Location = location,
+            Size = size,
+            BackColor = Color.FromArgb(32, 32, 32),
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+    }
+
+    private readonly record struct ProfileEditResult(string Name, string StartUrl);
+
+    private sealed class AvatarControl : Control
+    {
+        public AvatarControl(string initials)
+        {
+            Text = initials;
+            Font = new Font("Segoe UI", 18F, FontStyle.Bold);
+            DoubleBuffered = true;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            using var background = new SolidBrush(BackColor);
+            e.Graphics.FillRectangle(background, ClientRectangle);
+
+            TextRenderer.DrawText(
+                e.Graphics,
+                Text,
+                Font,
+                ClientRectangle,
+                ForeColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.SingleLine);
+        }
     }
 }

@@ -4,6 +4,8 @@ namespace MultiWebView;
 
 public sealed class ProfileStore
 {
+    public const string DefaultStartUrl = "https://www.google.com/";
+
     public static readonly string DefaultProfilesPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MultiWebView",
@@ -41,16 +43,21 @@ public sealed class ProfileStore
 
         var json = File.ReadAllText(ProfilesPath);
         var profiles = JsonSerializer.Deserialize<List<Profile>>(json, JsonOptions) ?? [];
+        if (NormalizeProfileUrls(profiles))
+        {
+            SaveProfiles(profiles);
+        }
 
         return profiles.OrderByDescending(profile => profile.LastUsedAt).ToList();
     }
 
-    public Profile CreateProfile(string name)
+    public Profile CreateProfile(string name, string startUrl)
     {
         var profiles = LoadProfiles().ToList();
         var profile = new Profile
         {
-            Name = string.IsNullOrWhiteSpace(name) ? $"Person {profiles.Count + 1}" : name.Trim()
+            Name = string.IsNullOrWhiteSpace(name) ? $"Person {profiles.Count + 1}" : name.Trim(),
+            StartUrl = NormalizeStartUrl(startUrl)
         };
 
         profiles.Add(profile);
@@ -73,7 +80,7 @@ public sealed class ProfileStore
         SaveProfiles(profiles);
     }
 
-    public void RenameProfile(Profile selectedProfile, string name)
+    public void UpdateProfile(Profile selectedProfile, string name, string startUrl)
     {
         var trimmedName = name.Trim();
         if (string.IsNullOrWhiteSpace(trimmedName))
@@ -91,6 +98,8 @@ public sealed class ProfileStore
 
         profile.Name = trimmedName;
         selectedProfile.Name = trimmedName;
+        profile.StartUrl = NormalizeStartUrl(startUrl);
+        selectedProfile.StartUrl = profile.StartUrl;
         SaveProfiles(profiles);
     }
 
@@ -127,6 +136,18 @@ public sealed class ProfileStore
         SaveSettings(new ProfileStoreSettings { ProfilesPath = AppDataPath });
     }
 
+    public static string NormalizeStartUrl(string startUrl)
+    {
+        var trimmedUrl = startUrl.Trim();
+        if (!Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return DefaultStartUrl;
+        }
+
+        return uri.ToString();
+    }
+
     public string GetWebViewUserDataFolder(Profile profile)
     {
         var folder = Path.Combine(GetProfileFolder(profile), "webview2");
@@ -151,6 +172,23 @@ public sealed class ProfileStore
             Directory.CreateDirectory(profileFolder);
             File.WriteAllText(Path.Combine(profileFolder, "profile.json"), JsonSerializer.Serialize(profile, JsonOptions));
         }
+    }
+
+    private static bool NormalizeProfileUrls(IEnumerable<Profile> profiles)
+    {
+        var changed = false;
+
+        foreach (var profile in profiles)
+        {
+            var normalizedUrl = NormalizeStartUrl(profile.StartUrl);
+            if (profile.StartUrl != normalizedUrl)
+            {
+                profile.StartUrl = normalizedUrl;
+                changed = true;
+            }
+        }
+
+        return changed;
     }
 
     private ProfileStoreSettings LoadSettings()
