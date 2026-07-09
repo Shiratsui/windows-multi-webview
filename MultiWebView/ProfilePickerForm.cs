@@ -667,6 +667,25 @@ public sealed class ProfilePickerForm : Form
         Activate();
     }
 
+    public void ActivateFromExternalLaunch()
+    {
+        if (isMinimizedToTray)
+        {
+            RestoreFromTray();
+            return;
+        }
+
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        Show();
+        ShowInTaskbar = true;
+        Activate();
+        BringToFront();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
