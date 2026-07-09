@@ -11,12 +11,14 @@ public sealed class BrowserForm : Form
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
+    private readonly Color btnActive = Color.FromArgb(25, 70, 115);
     private readonly int doubleClickThresholdMs = SystemInformation.DoubleClickTime;
 
     private WebView2 webView = null!;
     private Panel titleBar = null!;
     private Panel contentPanel = null!;
     private Button btnRefresh = null!;
+    private Button btnPin = null!;
     private Button btnMin = null!;
     private Button btnMax = null!;
     private Button btnClose = null!;
@@ -25,6 +27,7 @@ public sealed class BrowserForm : Form
     private DateTime lastClickTime = DateTime.MinValue;
     private Rectangle previousBounds;
     private bool isMaximized;
+    private bool isPinned;
     private Screen currentScreen = null!;
 
     [DllImport("user32.dll")]
@@ -85,6 +88,9 @@ public sealed class BrowserForm : Form
 
         btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
+
+        btnPin = CreateTitleButton("📌", TogglePin);
+        titleBar.Controls.Add(btnPin);
 
         btnMax = CreateTitleButton("⬜", () => ToggleMaximize());
         titleBar.Controls.Add(btnMax);
@@ -166,7 +172,7 @@ public sealed class BrowserForm : Form
 
         btn.MouseLeave += (_, _) =>
         {
-            btn.BackColor = btnNormal;
+            btn.BackColor = btn == btnPin && isPinned ? btnActive : btnNormal;
         };
     }
 
@@ -265,6 +271,14 @@ public sealed class BrowserForm : Form
         }
 
         UpdateMaxButtonIcon();
+    }
+
+    private void TogglePin()
+    {
+        isPinned = !isPinned;
+        TopMost = isPinned;
+        btnPin.BackColor = isPinned ? btnActive : btnNormal;
+        btnPin.Text = isPinned ? "📍" : "📌";
     }
 
     private void CheckMonitorChange()

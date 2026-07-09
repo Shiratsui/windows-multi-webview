@@ -16,10 +16,17 @@ public sealed class ProfilePickerForm : Form
     private readonly List<Form> openWindows = [];
     private readonly FlowLayoutPanel profileList = new();
     private readonly TextBox profileNameTextBox = new();
+    private readonly NotifyIcon trayIcon = new();
     private ActionButtonControl? createMultiViewButton;
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
+    private readonly Color btnActive = Color.FromArgb(25, 70, 115);
+    private readonly int doubleClickThresholdMs = SystemInformation.DoubleClickTime;
+    private Button? btnPin;
+    private DateTime lastClickTime = DateTime.MinValue;
+    private bool isPinned;
+    private bool isMinimizedToTray;
 
     [DllImport("user32.dll")]
     private static extern void ReleaseCapture();
@@ -38,6 +45,7 @@ public sealed class ProfilePickerForm : Form
         Font = new Font("Segoe UI", 10F);
         SetFormIcon(this);
 
+        ConfigureTrayIcon();
         BuildLayout();
         BuildTitleBar();
         LoadProfiles();
@@ -82,10 +90,27 @@ public sealed class ProfilePickerForm : Form
         title.MouseDown += DragForm;
         titleBar.Controls.Add(title);
 
-        titleBar.Controls.Add(CreateTitleButton("—", () => WindowState = FormWindowState.Minimized));
+        titleBar.Controls.Add(CreateTitleButton("—", MinimizeToTray));
+        btnPin = CreateTitleButton("📌", TogglePin);
+        titleBar.Controls.Add(btnPin);
         titleBar.Controls.Add(CreateTitleButton("⬜", ToggleMaximize));
         titleBar.Controls.Add(CreateTitleButton("✕", Close, true));
         titleBar.BringToFront();
+    }
+
+    private void ConfigureTrayIcon()
+    {
+        trayIcon.Text = "Multi WebView";
+        trayIcon.Visible = false;
+
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
+        trayIcon.Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Restore", null, (_, _) => RestoreFromTray());
+        menu.Items.Add("Exit", null, (_, _) => Close());
+        trayIcon.ContextMenuStrip = menu;
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
     private static void SetFormIcon(Form form)
@@ -112,7 +137,7 @@ public sealed class ProfilePickerForm : Form
         button.FlatAppearance.BorderSize = 0;
         button.Click += (_, _) => onClick();
         button.MouseEnter += (_, _) => button.BackColor = isClose ? btnCloseHover : btnHover;
-        button.MouseLeave += (_, _) => button.BackColor = btnNormal;
+        button.MouseLeave += (_, _) => button.BackColor = button == btnPin && isPinned ? btnActive : btnNormal;
 
         return button;
     }
@@ -521,7 +546,7 @@ public sealed class ProfilePickerForm : Form
 
         var browser = new MultiViewForm(selectedProfiles, profileStore);
         TrackOpenWindow(browser, selectedProfiles.Select(profile => profile.Id));
-        browser.Show(this);
+        browser.Show();
 
         selectedProfileIds.Clear();
         LoadProfiles();
@@ -567,6 +592,30 @@ public sealed class ProfilePickerForm : Form
             return;
         }
 
+        var now = DateTime.Now;
+        if ((now - lastClickTime).TotalMilliseconds < doubleClickThresholdMs)
+        {
+            ToggleMaximize();
+            lastClickTime = DateTime.MinValue;
+            return;
+        }
+
+        lastClickTime = now;
+
+        if (WindowState == FormWindowState.Maximized)
+        {
+            var mouseScreen = Cursor.Position;
+            var restoreBounds = RestoreBounds;
+            WindowState = FormWindowState.Normal;
+
+            var width = restoreBounds.Width > 0 ? restoreBounds.Width : Width;
+            var height = restoreBounds.Height > 0 ? restoreBounds.Height : Height;
+            var newX = mouseScreen.X - width / 2;
+            var newY = mouseScreen.Y - 15;
+
+            Bounds = new Rectangle(newX, newY, width, height);
+        }
+
         ReleaseCapture();
         SendMessage(Handle, WmNcButtonDown, HtCaption, 0);
     }
@@ -576,6 +625,56 @@ public sealed class ProfilePickerForm : Form
         WindowState = WindowState == FormWindowState.Maximized
             ? FormWindowState.Normal
             : FormWindowState.Maximized;
+    }
+
+    private void TogglePin()
+    {
+        isPinned = !isPinned;
+        TopMost = isPinned;
+
+        if (btnPin is not null)
+        {
+            btnPin.BackColor = isPinned ? btnActive : btnNormal;
+            btnPin.Text = isPinned ? "📍" : "📌";
+        }
+    }
+
+    private void MinimizeToTray()
+    {
+        if (isMinimizedToTray)
+        {
+            return;
+        }
+
+        isMinimizedToTray = true;
+        Hide();
+        ShowInTaskbar = false;
+        trayIcon.Visible = true;
+    }
+
+    private void RestoreFromTray()
+    {
+        if (!isMinimizedToTray)
+        {
+            return;
+        }
+
+        isMinimizedToTray = false;
+        WindowState = FormWindowState.Normal;
+        ShowInTaskbar = true;
+        Show();
+        trayIcon.Visible = false;
+        Activate();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            trayIcon.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private static string GetInitials(string name)

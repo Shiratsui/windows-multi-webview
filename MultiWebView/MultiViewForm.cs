@@ -13,10 +13,15 @@ public sealed class MultiViewForm : Form
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
+    private readonly Color btnActive = Color.FromArgb(25, 70, 115);
+    private readonly int doubleClickThresholdMs = SystemInformation.DoubleClickTime;
 
+    private Button btnPin = null!;
     private Button btnMax = null!;
+    private DateTime lastClickTime = DateTime.MinValue;
     private Rectangle previousBounds;
     private bool isMaximized;
+    private bool isPinned;
 
     [DllImport("user32.dll")]
     private static extern void ReleaseCapture();
@@ -90,6 +95,8 @@ public sealed class MultiViewForm : Form
         titleBar.Controls.Add(title);
 
         titleBar.Controls.Add(CreateTitleButton("—", () => WindowState = FormWindowState.Minimized));
+        btnPin = CreateTitleButton("📌", TogglePin);
+        titleBar.Controls.Add(btnPin);
         btnMax = CreateTitleButton("⬜", ToggleMaximize);
         titleBar.Controls.Add(btnMax);
         titleBar.Controls.Add(CreateTitleButton("✕", Close, true));
@@ -119,7 +126,7 @@ public sealed class MultiViewForm : Form
         btn.FlatAppearance.BorderSize = 0;
         btn.Click += (_, _) => onClick();
         btn.MouseEnter += (_, _) => btn.BackColor = isClose ? btnCloseHover : btnHover;
-        btn.MouseLeave += (_, _) => btn.BackColor = btnNormal;
+        btn.MouseLeave += (_, _) => btn.BackColor = btn == btnPin && isPinned ? btnActive : btnNormal;
 
         return btn;
     }
@@ -224,6 +231,29 @@ public sealed class MultiViewForm : Form
             return;
         }
 
+        var now = DateTime.Now;
+        if ((now - lastClickTime).TotalMilliseconds < doubleClickThresholdMs)
+        {
+            ToggleMaximize();
+            lastClickTime = DateTime.MinValue;
+            return;
+        }
+
+        lastClickTime = now;
+
+        if (isMaximized)
+        {
+            var mouseScreen = Cursor.Position;
+            var width = previousBounds.Width;
+            var height = previousBounds.Height;
+            var newX = mouseScreen.X - width / 2;
+            var newY = mouseScreen.Y - 15;
+
+            Bounds = new Rectangle(newX, newY, width, height);
+            isMaximized = false;
+            UpdateMaxButtonIcon();
+        }
+
         ReleaseCapture();
         SendMessage(Handle, WmNcButtonDown, HtCaption, 0);
     }
@@ -244,7 +274,23 @@ public sealed class MultiViewForm : Form
 
         if (btnMax is not null)
         {
+            UpdateMaxButtonIcon();
+        }
+    }
+
+    private void UpdateMaxButtonIcon()
+    {
+        if (btnMax is not null)
+        {
             btnMax.Text = isMaximized ? "❐" : "⬜";
         }
+    }
+
+    private void TogglePin()
+    {
+        isPinned = !isPinned;
+        TopMost = isPinned;
+        btnPin.BackColor = isPinned ? btnActive : btnNormal;
+        btnPin.Text = isPinned ? "📍" : "📌";
     }
 }
