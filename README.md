@@ -7,6 +7,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Create named profiles with their own persistent WebView2 user data folders.
 - Open newly created profiles in a one-tile multi-view browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
+- Refresh individual WebView tiles from their browser headers.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
@@ -53,14 +54,14 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the volume slider and mute button in each browser header to adjust that profile's audio.
+6. Use the refresh button, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 
 Profiles that are already open cannot be selected again until their browser window is closed.
 
 ## Audio Controls
 
-Each browser header includes a mute button and volume slider. The setting is saved per profile, so reopening the same profile restores its last volume and mute state.
+Each browser header includes a refresh button, mute button, and volume slider. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
 
 Volume is applied through the Windows audio session for the WebView2 process tree and is reapplied while the WebView is open. This keeps the saved profile volume and mute state in place even if WebView2 recreates its audio sessions.
 
@@ -100,7 +101,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with minimize, maximize, close, refresh, and pin controls where applicable.
+- Browser windows use borderless custom title bars with minimize, maximize, close, and pin controls where applicable. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

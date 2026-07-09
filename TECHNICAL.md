@@ -142,7 +142,7 @@ Initialization flow:
 5. Each profile gets its own WebView2 environment and user data folder.
 6. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with minimize, pin, maximize/restore, and close controls. Each tile has its own name, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with minimize, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, mute button, volume value, and volume slider.
 
 ## WebView2 Environment
 
@@ -267,7 +267,7 @@ The local `main` branch was ahead of `origin/main` by that commit.
 
 ## Development Guidance
 
-Prefer keeping audio behavior centralized in `WebViewVolumeController`. Browser forms should pass profile-specific state into the controller, but they should not duplicate Core Audio enumeration logic.
+Prefer keeping audio behavior centralized in `WebViewVolumeController`. `MultiViewForm` should pass profile-specific state into the controller, but it should not duplicate Core Audio enumeration logic.
 
 When changing profile persistence, update both the top-level `profiles.json` flow and the per-profile `profile.json` snapshot flow in `ProfileStore.SaveProfiles()`.
 

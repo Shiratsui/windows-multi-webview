@@ -12,6 +12,7 @@ public sealed class MultiViewForm : Form
     private readonly List<WebView2> webViews = [];
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
+    private readonly ToolTip toolTip = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
@@ -194,12 +195,13 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
-            Padding = new Padding(8, 3, 6, 3)
+            Padding = new Padding(8, 0, 6, 0)
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
@@ -215,6 +217,20 @@ public sealed class MultiViewForm : Form
         };
         header.Controls.Add(nameLabel, 0, 0);
 
+        var refreshButton = new Button
+        {
+            Text = "⭮",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI Symbol", 10F, FontStyle.Bold),
+            Margin = new Padding(4, 0, 2, 0)
+        };
+        refreshButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(refreshButton, "Refresh");
+        header.Controls.Add(refreshButton, 1, 0);
+
         var volumeValue = new Label
         {
             Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
@@ -224,7 +240,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 1, 0);
+        header.Controls.Add(volumeValue, 2, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -237,7 +253,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 2, 0);
+        header.Controls.Add(muteButton, 3, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -248,7 +264,7 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 3, 0);
+        header.Controls.Add(volumeSlider, 4, 0);
 
         tile.Controls.Add(header, 0, 0);
 
@@ -264,6 +280,11 @@ public sealed class MultiViewForm : Form
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
             () => mutedByWebView.GetValueOrDefault(tileWebView),
             () => profile.Name);
+
+        refreshButton.Click += (_, _) =>
+        {
+            tileWebView.CoreWebView2?.Reload();
+        };
 
         volumeSlider.ValueChanged += (_, _) =>
         {
@@ -376,5 +397,15 @@ public sealed class MultiViewForm : Form
         TopMost = isPinned;
         btnPin.BackColor = isPinned ? btnActive : btnNormal;
         btnPin.Text = isPinned ? "📍" : "📌";
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            toolTip.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 }
