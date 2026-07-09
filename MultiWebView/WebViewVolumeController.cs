@@ -6,13 +6,7 @@ namespace MultiWebView;
 public static class WebViewVolumeController
 {
     private const int ClsctxAll = 23;
-    private static readonly TimeSpan[] RetryDelays =
-    [
-        TimeSpan.Zero,
-        TimeSpan.FromMilliseconds(250),
-        TimeSpan.FromMilliseconds(750),
-        TimeSpan.FromMilliseconds(1500)
-    ];
+    private const int ReapplyIntervalMs = 1000;
 
     public static async Task ConfigureAsync(WebView2 webView, Func<int> getVolumePercent, Func<bool> getMuted)
     {
@@ -21,44 +15,53 @@ public static class WebViewVolumeController
             return;
         }
 
-        webView.CoreWebView2.NavigationCompleted += (_, _) =>
-        {
-            _ = ApplyAsync(webView, getVolumePercent(), getMuted());
-        };
-
-        webView.CoreWebView2.IsDocumentPlayingAudioChanged += (_, _) =>
-        {
-            _ = ApplyAsync(webView, getVolumePercent(), getMuted());
-        };
-
         await ApplyAsync(webView, getVolumePercent(), getMuted());
+
+        var isApplying = false;
+        var timer = new System.Windows.Forms.Timer
+        {
+            Interval = ReapplyIntervalMs
+        };
+
+        timer.Tick += async (_, _) =>
+        {
+            if (isApplying || webView.IsDisposed || webView.CoreWebView2 is null)
+            {
+                return;
+            }
+
+            isApplying = true;
+            try
+            {
+                await ApplyAsync(webView, getVolumePercent(), getMuted());
+            }
+            finally
+            {
+                isApplying = false;
+            }
+        };
+
+        webView.Disposed += (_, _) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+        };
+
+        timer.Start();
     }
 
-    public static async Task ApplyAsync(WebView2 webView, int volumePercent, bool muted)
+    public static Task ApplyAsync(WebView2 webView, int volumePercent, bool muted)
     {
         if (webView.CoreWebView2 is null || webView.IsDisposed)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         var volume = Math.Clamp(volumePercent, 0, 100) / 100f;
         webView.CoreWebView2.IsMuted = muted;
         var browserProcessId = webView.CoreWebView2.BrowserProcessId;
-
-        foreach (var delay in RetryDelays)
-        {
-            if (delay > TimeSpan.Zero)
-            {
-                await Task.Delay(delay);
-            }
-
-            if (webView.CoreWebView2 is null || webView.IsDisposed)
-            {
-                return;
-            }
-
-            ApplyToAudioSessions(browserProcessId, volume, muted);
-        }
+        ApplyToAudioSessions(browserProcessId, volume, muted);
+        return Task.CompletedTask;
     }
 
     private static void ApplyToAudioSessions(uint browserProcessId, float volume, bool muted)
