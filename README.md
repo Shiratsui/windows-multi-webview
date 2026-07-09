@@ -5,7 +5,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 ## Features
 
 - Create named profiles with their own persistent WebView2 user data folders.
-- Open one profile in a dedicated borderless browser window.
+- Open newly created profiles in a one-tile multi-view browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
@@ -50,7 +50,7 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 
 1. Start the app.
 2. Enter a profile name and optional start URL. Invalid or empty URLs fall back to `https://www.google.com/`.
-3. Click `Add profile` to create the profile and open it.
+3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
 6. Use the volume slider and mute button in each browser header to adjust that profile's audio.
@@ -88,7 +88,6 @@ Each profile has a stable ID, display name, start URL, timestamps, saved audio s
 MultiWebView/
   Program.cs                    App entry point and single-instance activation
   ProfilePickerForm.cs          Main profile picker UI
-  BrowserForm.cs                Single-profile browser window
   MultiViewForm.cs              Tiled multi-profile browser window
   ProfileStore.cs               Profile persistence and storage settings
   WebViewEnvironmentFactory.cs  WebView2 environment options

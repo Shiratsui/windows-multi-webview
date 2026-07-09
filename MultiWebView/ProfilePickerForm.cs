@@ -425,7 +425,7 @@ public sealed class ProfilePickerForm : Form
         var profile = profileStore.CreateProfile(profileNameTextBox.Text, profileUrlTextBox.Text);
         profileNameTextBox.Clear();
         profileUrlTextBox.Text = ProfileStore.DefaultStartUrl;
-        OpenProfile(profile);
+        OpenProfilesInMultiView([profile], false);
     }
 
     private void ChangeProfileFolder()
@@ -488,22 +488,6 @@ public sealed class ProfilePickerForm : Form
         UpdateMultiViewButton();
     }
 
-    private void OpenProfile(Profile profile, string? launchUrl = null)
-    {
-        if (IsProfileOpen(profile))
-        {
-            return;
-        }
-
-        profileStore.MarkUsed(profile);
-
-        var browser = new BrowserForm(profile, profileStore, launchUrl);
-        TrackOpenWindow(browser, [profile.Id]);
-        browser.Show(this);
-
-        LoadProfiles();
-    }
-
     private void ToggleProfileSelection(Profile profile)
     {
         if (IsProfileOpen(profile))
@@ -562,21 +546,39 @@ public sealed class ProfilePickerForm : Form
             .Where(profile => selectedProfileIds.Contains(profile.Id) && !IsProfileOpen(profile))
             .ToList();
 
-        if (selectedProfiles.Count == 0)
+        OpenProfilesInMultiView(selectedProfiles, true);
+    }
+
+    private void OpenProfilesInMultiView(IReadOnlyCollection<Profile> profiles, bool clearSelectedProfiles)
+    {
+        if (profiles.Count == 0)
         {
             return;
         }
 
-        foreach (var profile in selectedProfiles)
+        var unopenedProfiles = profiles
+            .Where(profile => !IsProfileOpen(profile))
+            .ToList();
+
+        if (unopenedProfiles.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var profile in unopenedProfiles)
         {
             profileStore.MarkUsed(profile);
         }
 
-        var browser = new MultiViewForm(selectedProfiles, profileStore);
-        TrackOpenWindow(browser, selectedProfiles.Select(profile => profile.Id));
+        var browser = new MultiViewForm(unopenedProfiles, profileStore);
+        TrackOpenWindow(browser, unopenedProfiles.Select(profile => profile.Id));
         browser.Show();
 
-        selectedProfileIds.Clear();
+        if (clearSelectedProfiles)
+        {
+            selectedProfileIds.Clear();
+        }
+
         LoadProfiles();
         UpdateMultiViewButton();
     }

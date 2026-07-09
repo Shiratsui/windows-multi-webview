@@ -6,10 +6,7 @@ This document describes the current architecture and implementation details for 
 
 Multi WebView is a Windows Forms desktop app that opens multiple isolated WebView2 browser profiles. Each profile gets its own persistent WebView2 user data folder, so cookies, Google sign-ins, local storage, and browser data stay separated.
 
-The app supports two browser modes:
-
-- A single-profile borderless browser window.
-- A tiled multi-profile browser window with one WebView per selected profile.
+The browser surface is `MultiViewForm`, a tiled browser window with one WebView per profile. `Add profile` opens the new profile in a one-tile multi-view window, and `Create multi-view` opens the selected profiles together.
 
 The app also persists and enforces per-profile audio volume and mute state using Windows Core Audio sessions for the WebView2 process tree.
 
@@ -104,8 +101,8 @@ Responsibilities:
 - Create, edit, and delete profiles.
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
-- Open single-profile `BrowserForm` windows.
-- Open tiled `MultiViewForm` windows.
+- Open newly created profiles in one-tile `MultiViewForm` windows.
+- Open selected profiles together in tiled `MultiViewForm` windows.
 - Minimize to tray and restore from tray.
 - Keep the picker topmost when pinned.
 
@@ -119,26 +116,6 @@ Selection:
 
 - Clicking a profile card toggles its ID in `selectedProfileIds`.
 - The "Create multi-view" button appears only when at least one unopened profile is selected.
-
-## Single Browser Window
-
-`BrowserForm` hosts one profile in one `WebView2`.
-
-Initialization flow:
-
-1. Constructor stores the `Profile`, `ProfileStore`, and optional launch URL.
-2. The custom title bar and content panel are built.
-3. `BuildWebView()` creates the `WebView2` control.
-4. Audio enforcement is attached immediately with `WebViewVolumeController.Attach(...)`.
-5. `Shown` calls `InitializeWebViewAsync()`.
-6. A profile-specific WebView2 environment is created with `WebViewEnvironmentFactory.CreateAsync(userDataFolder)`.
-7. `EnsureCoreWebView2Async(environment)` creates the browser process.
-8. `WebViewVolumeController.EnsureAudioSessionAsync(webView)` creates a silent audio session before navigation.
-9. `WebViewVolumeController.ConfigureAsync(...)` applies the saved volume/mute state immediately.
-10. `webView.Source` is set to the launch URL or profile start URL.
-11. The window maximizes to the current screen working area.
-
-The title bar includes refresh, mute, volume slider, minimize, pin, maximize/restore, and close controls.
 
 ## Multi-View Window
 
@@ -237,7 +214,7 @@ The silent audio session is a workaround. It exists only to force early mixer-se
 - Custom-painted slider for `0..100` audio volume.
 - Supports click and drag.
 - Emits `ValueChanged` when the value changes.
-- Used in single browser headers and multi-view tile headers.
+- Used in multi-view tile headers.
 
 `ProfilePickerForm.AvatarControl`
 
@@ -258,7 +235,7 @@ Pinning sets `TopMost`.
 Maximize behavior differs slightly:
 
 - `ProfilePickerForm` uses `WindowState`.
-- `BrowserForm` and `MultiViewForm` manually store previous bounds and set bounds to `Screen.WorkingArea`.
+- `MultiViewForm` manually stores previous bounds and sets bounds to `Screen.WorkingArea`.
 
 ## Build And Run
 
