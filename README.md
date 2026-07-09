@@ -97,6 +97,8 @@ MultiWebView/
   Profile.cs                    Profile model
 ```
 
+See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage behavior, and audio implementation context.
+
 ## Notes
 
 - Browser windows use borderless custom title bars with minimize, maximize, close, refresh, and pin controls where applicable.
