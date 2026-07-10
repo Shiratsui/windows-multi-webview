@@ -22,9 +22,11 @@ public sealed class ProfilePickerForm : Form
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
     private readonly Color btnActive = Color.FromArgb(25, 70, 115);
-    private readonly int doubleClickThresholdMs = SystemInformation.DoubleClickTime;
     private Button? btnPin;
-    private DateTime lastClickTime = DateTime.MinValue;
+    private Button? btnMax;
+    private Button? btnClose;
+    private Point? pendingTitleBarDragStart;
+    private FormWindowState windowStateBeforeTray = FormWindowState.Normal;
     private bool isPinned;
     private bool isMinimizedToTray;
 
@@ -60,7 +62,7 @@ public sealed class ProfilePickerForm : Form
             BackColor = btnNormal
         };
 
-        titleBar.MouseDown += DragForm;
+        AttachTitleBarDrag(titleBar);
         Controls.Add(titleBar);
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
@@ -76,7 +78,7 @@ public sealed class ProfilePickerForm : Form
             icon.Image = Image.FromFile(iconPath);
         }
 
-        icon.MouseDown += DragForm;
+        AttachTitleBarDrag(icon);
         titleBar.Controls.Add(icon);
 
         var title = new Label
@@ -87,14 +89,15 @@ public sealed class ProfilePickerForm : Form
             AutoSize = true,
             Location = new Point(36, 9)
         };
-        title.MouseDown += DragForm;
+        AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
 
-        titleBar.Controls.Add(CreateTitleButton("—", MinimizeToTray));
         btnPin = CreateTitleButton("📌", TogglePin);
         titleBar.Controls.Add(btnPin);
-        titleBar.Controls.Add(CreateTitleButton("⬜", ToggleMaximize));
-        titleBar.Controls.Add(CreateTitleButton("✕", Close, true));
+        btnMax = CreateTitleButton("⬜", ToggleMaximize);
+        titleBar.Controls.Add(btnMax);
+        btnClose = CreateTitleButton("✕", MinimizeToTray, true);
+        titleBar.Controls.Add(btnClose);
         titleBar.BringToFront();
     }
 
@@ -106,9 +109,40 @@ public sealed class ProfilePickerForm : Form
         var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
         trayIcon.Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
 
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Restore", null, (_, _) => RestoreFromTray());
-        menu.Items.Add("Exit", null, (_, _) => Close());
+        var menu = new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(6),
+            ShowImageMargin = false,
+            Renderer = new DarkTrayMenuRenderer()
+        };
+
+        var restoreItem = new ToolStripMenuItem("Restore")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 156,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        restoreItem.Click += (_, _) => RestoreFromTray();
+
+        var exitItem = new ToolStripMenuItem("Exit")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 156,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        exitItem.Click += (_, _) => ExitApplication();
+
+        menu.Items.Add(restoreItem);
+        menu.Items.Add(exitItem);
         trayIcon.ContextMenuStrip = menu;
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
@@ -615,23 +649,65 @@ public sealed class ProfilePickerForm : Form
         };
     }
 
-    private void DragForm(object? sender, MouseEventArgs e)
+    private void AttachTitleBarDrag(Control control)
+    {
+        control.MouseDown += TitleBarMouseDown;
+        control.MouseMove += TitleBarMouseMove;
+        control.MouseUp += TitleBarMouseUp;
+        control.MouseDoubleClick += TitleBarMouseDoubleClick;
+    }
+
+    private void TitleBarMouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left)
         {
             return;
         }
 
-        var now = DateTime.Now;
-        if ((now - lastClickTime).TotalMilliseconds < doubleClickThresholdMs)
+        pendingTitleBarDragStart = Cursor.Position;
+    }
+
+    private void TitleBarMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left || pendingTitleBarDragStart is not { } dragStart)
         {
-            ToggleMaximize();
-            lastClickTime = DateTime.MinValue;
             return;
         }
 
-        lastClickTime = now;
+        var dragSize = SystemInformation.DragSize;
+        var dragBounds = new Rectangle(
+            dragStart.X - dragSize.Width / 2,
+            dragStart.Y - dragSize.Height / 2,
+            dragSize.Width,
+            dragSize.Height);
 
+        if (dragBounds.Contains(Cursor.Position))
+        {
+            return;
+        }
+
+        pendingTitleBarDragStart = null;
+        DragForm();
+    }
+
+    private void TitleBarMouseUp(object? sender, MouseEventArgs e)
+    {
+        pendingTitleBarDragStart = null;
+    }
+
+    private void TitleBarMouseDoubleClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        pendingTitleBarDragStart = null;
+        ToggleMaximize();
+    }
+
+    private void DragForm()
+    {
         if (WindowState == FormWindowState.Maximized)
         {
             var mouseScreen = Cursor.Position;
@@ -676,10 +752,20 @@ public sealed class ProfilePickerForm : Form
             return;
         }
 
+        pendingTitleBarDragStart = null;
+        ResetTitleButtonColors();
+        windowStateBeforeTray = WindowState == FormWindowState.Minimized
+            ? FormWindowState.Normal
+            : WindowState;
         isMinimizedToTray = true;
+        trayIcon.Visible = true;
         Hide();
         ShowInTaskbar = false;
-        trayIcon.Visible = true;
+    }
+
+    private void ExitApplication()
+    {
+        Close();
     }
 
     private void RestoreFromTray()
@@ -690,11 +776,15 @@ public sealed class ProfilePickerForm : Form
         }
 
         isMinimizedToTray = false;
-        WindowState = FormWindowState.Normal;
         ShowInTaskbar = true;
         Show();
+        WindowState = windowStateBeforeTray == FormWindowState.Minimized
+            ? FormWindowState.Normal
+            : windowStateBeforeTray;
+        ResetTitleButtonColors();
         trayIcon.Visible = false;
         Activate();
+        BringToFront();
     }
 
     public void ActivateFromExternalLaunch()
@@ -716,6 +806,24 @@ public sealed class ProfilePickerForm : Form
         BringToFront();
     }
 
+    private void ResetTitleButtonColors()
+    {
+        if (btnPin is not null)
+        {
+            btnPin.BackColor = isPinned ? btnActive : btnNormal;
+        }
+
+        if (btnMax is not null)
+        {
+            btnMax.BackColor = btnNormal;
+        }
+
+        if (btnClose is not null)
+        {
+            btnClose.BackColor = btnNormal;
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -724,6 +832,17 @@ public sealed class ProfilePickerForm : Form
         }
 
         base.Dispose(disposing);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Alt | Keys.F4))
+        {
+            ExitApplication();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     private static string GetInitials(string name)
@@ -895,5 +1014,71 @@ public sealed class ProfilePickerForm : Form
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.SingleLine);
         }
+    }
+}
+
+internal sealed class DarkTrayMenuRenderer : ToolStripProfessionalRenderer
+{
+    private static readonly Color MenuBack = Color.FromArgb(28, 28, 28);
+    private static readonly Color MenuBorder = Color.FromArgb(64, 64, 64);
+    private static readonly Color ItemHover = Color.FromArgb(60, 60, 60);
+    private static readonly Color TextColor = Color.White;
+    private static readonly Color DisabledTextColor = Color.FromArgb(130, 130, 130);
+
+    public DarkTrayMenuRenderer()
+        : base(new DarkTrayMenuColorTable())
+    {
+        RoundedEdges = false;
+    }
+
+    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+    {
+        using var brush = new SolidBrush(MenuBack);
+        e.Graphics.FillRectangle(brush, e.AffectedBounds);
+    }
+
+    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+    {
+        using var pen = new Pen(MenuBorder);
+        var bounds = new Rectangle(Point.Empty, e.ToolStrip.Size - new Size(1, 1));
+        e.Graphics.DrawRectangle(pen, bounds);
+    }
+
+    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+    {
+        var color = e.Item.Selected ? ItemHover : MenuBack;
+        using var brush = new SolidBrush(color);
+        e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
+    }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        var textColor = e.Item.Enabled ? TextColor : DisabledTextColor;
+        var textBounds = new Rectangle(
+            12,
+            0,
+            Math.Max(0, e.Item.Width - 24),
+            e.Item.Height);
+
+        TextRenderer.DrawText(
+            e.Graphics,
+            e.Text,
+            e.TextFont,
+            textBounds,
+            textColor,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
+    }
+
+    private sealed class DarkTrayMenuColorTable : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => MenuBack;
+        public override Color MenuBorder => DarkTrayMenuRenderer.MenuBorder;
+        public override Color MenuItemSelected => ItemHover;
+        public override Color MenuItemBorder => ItemHover;
+        public override Color ImageMarginGradientBegin => MenuBack;
+        public override Color ImageMarginGradientMiddle => MenuBack;
+        public override Color ImageMarginGradientEnd => MenuBack;
+        public override Color SeparatorDark => DarkTrayMenuRenderer.MenuBorder;
+        public override Color SeparatorLight => DarkTrayMenuRenderer.MenuBorder;
     }
 }

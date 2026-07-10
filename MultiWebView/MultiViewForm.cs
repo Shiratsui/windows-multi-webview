@@ -17,11 +17,9 @@ public sealed class MultiViewForm : Form
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
     private readonly Color btnActive = Color.FromArgb(25, 70, 115);
-    private readonly int doubleClickThresholdMs = SystemInformation.DoubleClickTime;
-
     private Button btnPin = null!;
     private Button btnMax = null!;
-    private DateTime lastClickTime = DateTime.MinValue;
+    private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private bool isMaximized;
     private bool isPinned;
@@ -67,7 +65,7 @@ public sealed class MultiViewForm : Form
             Dock = DockStyle.Top,
             BackColor = btnNormal
         };
-        titleBar.MouseDown += DragForm;
+        AttachTitleBarDrag(titleBar);
         Controls.Add(titleBar);
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
@@ -83,7 +81,7 @@ public sealed class MultiViewForm : Form
             icon.Image = Image.FromFile(iconPath);
         }
 
-        icon.MouseDown += DragForm;
+        AttachTitleBarDrag(icon);
         titleBar.Controls.Add(icon);
 
         var title = new Label
@@ -94,7 +92,7 @@ public sealed class MultiViewForm : Form
             AutoSize = true,
             Location = new Point(36, 9)
         };
-        title.MouseDown += DragForm;
+        AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
 
         titleBar.Controls.Add(CreateTitleButton("—", () => WindowState = FormWindowState.Minimized));
@@ -329,23 +327,65 @@ public sealed class MultiViewForm : Form
         }
     }
 
-    private void DragForm(object? sender, MouseEventArgs e)
+    private void AttachTitleBarDrag(Control control)
+    {
+        control.MouseDown += TitleBarMouseDown;
+        control.MouseMove += TitleBarMouseMove;
+        control.MouseUp += TitleBarMouseUp;
+        control.MouseDoubleClick += TitleBarMouseDoubleClick;
+    }
+
+    private void TitleBarMouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left)
         {
             return;
         }
 
-        var now = DateTime.Now;
-        if ((now - lastClickTime).TotalMilliseconds < doubleClickThresholdMs)
+        pendingTitleBarDragStart = Cursor.Position;
+    }
+
+    private void TitleBarMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left || pendingTitleBarDragStart is not { } dragStart)
         {
-            ToggleMaximize();
-            lastClickTime = DateTime.MinValue;
             return;
         }
 
-        lastClickTime = now;
+        var dragSize = SystemInformation.DragSize;
+        var dragBounds = new Rectangle(
+            dragStart.X - dragSize.Width / 2,
+            dragStart.Y - dragSize.Height / 2,
+            dragSize.Width,
+            dragSize.Height);
 
+        if (dragBounds.Contains(Cursor.Position))
+        {
+            return;
+        }
+
+        pendingTitleBarDragStart = null;
+        DragForm();
+    }
+
+    private void TitleBarMouseUp(object? sender, MouseEventArgs e)
+    {
+        pendingTitleBarDragStart = null;
+    }
+
+    private void TitleBarMouseDoubleClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        pendingTitleBarDragStart = null;
+        ToggleMaximize();
+    }
+
+    private void DragForm()
+    {
         if (isMaximized)
         {
             var mouseScreen = Cursor.Position;
