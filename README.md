@@ -11,7 +11,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
-- Minimize the profile picker to the system tray and restore it from the tray icon.
+- Close the profile picker to the system tray and restore it from the tray icon.
 - Keep windows on top with the pin button.
 - Single-instance startup: launching the app again focuses the existing picker.
 
@@ -56,6 +56,7 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 5. Use `Create multi-view` to open selected profiles in one tiled window.
 6. Use the refresh button, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
+8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 
 Profiles that are already open cannot be selected again until their browser window is closed.
 
@@ -101,7 +102,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with minimize, maximize, close, and pin controls where applicable. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. The profile picker close button hides to tray; `Alt+F4` exits. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

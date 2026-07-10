@@ -103,7 +103,7 @@ Responsibilities:
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Open newly created profiles in one-tile `MultiViewForm` windows.
 - Open selected profiles together in tiled `MultiViewForm` windows.
-- Minimize to tray and restore from tray.
+- Hide to tray from the custom close button and restore from tray.
 - Keep the picker topmost when pinned.
 
 Open profile tracking:
@@ -221,16 +221,28 @@ The silent audio session is a workaround. It exists only to force early mixer-se
 - Small custom-painted initials block for profile cards.
 - Uses the first one or two name parts.
 
+`DarkTrayMenuRenderer`
+
+- Custom renderer for the profile picker tray context menu.
+- Draws the tray menu with a dark background, dark hover state, border, and vertically centered white text.
+
 ## Windowing Notes
 
 The app uses borderless windows with custom title bars.
 
-Dragging is implemented with Win32:
+Title-bar dragging waits until the pointer moves outside `SystemInformation.DragSize`, so a plain click does not restore or move a maximized window. Once dragging starts, it is implemented with Win32:
 
 - `ReleaseCapture()`
 - `SendMessage(handle, WM_NCLBUTTONDOWN, HTCAPTION, 0)`
 
 Pinning sets `TopMost`.
+
+Profile picker close behavior:
+
+- The custom close button hides the picker to the system tray.
+- The picker stores the previous `WindowState`, hides directly without setting `WindowState.Minimized`, and restores the previous state from the tray to avoid a visible minimize flash.
+- The close button hover color is reset before hiding and after restore because hiding the form can skip normal mouse-leave handling.
+- `Alt+F4` and tray menu `Exit` close the application.
 
 Maximize behavior differs slightly:
 
