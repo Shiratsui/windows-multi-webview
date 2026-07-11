@@ -19,6 +19,7 @@ public sealed class MultiViewForm : Form
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
     private readonly Color btnActive = Color.FromArgb(25, 70, 115);
     private Button btnMin = null!;
+    private Button btnTray = null!;
     private Button btnPin = null!;
     private Button btnMax = null!;
     private Point? pendingTitleBarDragStart;
@@ -145,8 +146,10 @@ public sealed class MultiViewForm : Form
         AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
 
-        btnMin = CreateTitleButton("—", MinimizeToTray);
+        btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
+        btnTray = CreateTitleButton("▾", MinimizeToTray);
+        titleBar.Controls.Add(btnTray);
         btnPin = CreateTitleButton("📌", TogglePin);
         titleBar.Controls.Add(btnPin);
         btnMax = CreateTitleButton("⬜", ToggleMaximize);
@@ -550,6 +553,7 @@ public sealed class MultiViewForm : Form
     private void ResetTitleButtonColors()
     {
         btnMin.BackColor = btnNormal;
+        btnTray.BackColor = btnNormal;
         btnPin.BackColor = isPinned ? btnActive : btnNormal;
         btnMax.BackColor = btnNormal;
     }
