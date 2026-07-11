@@ -9,4 +9,8 @@ public sealed class Profile
     public string StartUrl { get; set; } = ProfileStore.DefaultStartUrl;
     public int VolumePercent { get; set; } = 100;
     public bool IsMuted { get; set; }
+    public bool ShowStatsFps { get; set; }
+    public bool ShowStatsCpu { get; set; }
+    public bool ShowStatsMemory { get; set; }
+    public bool ShowStatsHorizontal { get; set; }
 }

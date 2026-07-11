@@ -10,6 +10,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Refresh individual WebView tiles from their browser headers.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
+- Show an optional per-tile stats overlay for FPS, render latency, CPU, and memory.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
@@ -57,12 +58,25 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the refresh button, screenshot button, profile folder button, volume slider, and mute button in each browser header to control that profile's WebView.
+6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar or the tray button to hide the window to the system tray. Double-click its tray icon or use tray menu `Restore` to show it again.
 
 Profiles that are already open cannot be selected again until their browser window is closed.
+
+## Stats Overlay
+
+Each WebView tile has a `STAT` menu with checkboxes for:
+
+- `FPS`: page render frames per second, measured with `requestAnimationFrame`.
+- `CPU`: approximate CPU usage for the WebView2 process tree.
+- `Memory`: approximate working set memory for the WebView2 process tree.
+- `Horizontal`: display selected stats on one line separated by `|` instead of stacked vertically.
+
+When `FPS` is enabled, the overlay also shows `LAT`, which is render frame time in milliseconds, not network ping or server latency.
+
+Stats selections are saved per profile, so reopening the same profile restores its last selected overlay options. The stats menu stays open while toggling options, closes when `STAT` is clicked again, and closes when the user clicks the page, clicks outside the menu, or switches to another application. GPU usage is not shown because WebView2 and normal Windows APIs do not expose reliable per-WebView GPU utilization.
 
 ## Audio Controls
 
@@ -88,7 +102,7 @@ The app also stores its settings at:
 %LOCALAPPDATA%\MultiWebView\settings.json
 ```
 
-Each profile has a stable ID, display name, start URL, timestamps, saved audio state, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
+Each profile has a stable ID, display name, start URL, timestamps, saved audio state, saved stats overlay options, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
 
 Screenshots are saved automatically under:
 

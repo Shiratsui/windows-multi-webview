@@ -155,7 +155,7 @@ public static class WebViewVolumeController
         }
     }
 
-    private static HashSet<int> GetProcessTreeIds(int rootProcessId)
+    internal static HashSet<int> GetProcessTreeIds(int rootProcessId)
     {
         var processParents = new Dictionary<int, int?>();
 

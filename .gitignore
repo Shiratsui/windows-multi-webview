@@ -4,6 +4,7 @@ obj/
 *.suo
 .vs/
 .agents/
+mock/
 profile-picker-render.png
 
 # WebView2 runtime/profile data should live in %LOCALAPPDATA%\MultiWebView,

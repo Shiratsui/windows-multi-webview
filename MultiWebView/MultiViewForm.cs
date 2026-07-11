@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -14,6 +15,8 @@ public sealed class MultiViewForm : Form
     private readonly List<WebView2> webViews = [];
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
+    private readonly Dictionary<WebView2, StatsOverlayState> statsByWebView = [];
+    private readonly List<ContextMenuStrip> statsMenus = [];
     private readonly ToolTip toolTip = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
@@ -62,6 +65,7 @@ public sealed class MultiViewForm : Form
             ToggleMaximize();
             await InitializeWebViewsAsync();
         };
+        Deactivate += (_, _) => CloseStatsMenus();
     }
 
     private void ConfigureTrayIcon()
@@ -249,7 +253,7 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 7,
+            ColumnCount = 8,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
             Padding = new Padding(8, 0, 6, 0)
@@ -258,6 +262,7 @@ public sealed class MultiViewForm : Form
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
@@ -315,6 +320,20 @@ public sealed class MultiViewForm : Form
         toolTip.SetToolTip(folderButton, "Show profile folder");
         header.Controls.Add(folderButton, 3, 0);
 
+        var fpsButton = new Button
+        {
+            Text = "STAT",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        fpsButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(fpsButton, "Show stats overlay");
+        header.Controls.Add(fpsButton, 4, 0);
+
         var volumeValue = new Label
         {
             Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
@@ -324,7 +343,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 4, 0);
+        header.Controls.Add(volumeValue, 5, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -337,7 +356,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 5, 0);
+        header.Controls.Add(muteButton, 6, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -348,7 +367,7 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 6, 0);
+        header.Controls.Add(volumeSlider, 7, 0);
 
         tile.Controls.Add(header, 0, 0);
 
@@ -359,6 +378,13 @@ public sealed class MultiViewForm : Form
         var tileWebView = webView;
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
+        statsByWebView[tileWebView] = new StatsOverlayState
+        {
+            ShowFps = profile.ShowStatsFps,
+            ShowCpu = profile.ShowStatsCpu,
+            ShowMemory = profile.ShowStatsMemory,
+            IsHorizontal = profile.ShowStatsHorizontal
+        };
         WebViewVolumeController.Attach(
             tileWebView,
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
@@ -379,6 +405,8 @@ public sealed class MultiViewForm : Form
         {
             OpenProfileFolder(profile);
         };
+
+        ConfigureStatsButton(fpsButton, tileWebView, profile);
 
         volumeSlider.ValueChanged += (_, _) =>
         {
@@ -409,6 +437,324 @@ public sealed class MultiViewForm : Form
         tile.Controls.Add(tileWebView, 0, 1);
 
         return tile;
+    }
+
+    private void ConfigureStatsButton(Button statsButton, WebView2 webView, Profile profile)
+    {
+        var menu = new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9F),
+            ShowImageMargin = false,
+            Renderer = new StatsMenuRenderer(),
+            AutoClose = false
+        };
+        var menuFilter = new StatsMenuMessageFilter(menu, statsButton);
+        var menuFilterAttached = false;
+        statsMenus.Add(menu);
+
+        var state = statsByWebView[webView];
+        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (_, checkedValue) => statsByWebView[webView].ShowFps = checkedValue);
+        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (_, checkedValue) => statsByWebView[webView].ShowCpu = checkedValue);
+        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (_, checkedValue) => statsByWebView[webView].ShowMemory = checkedValue);
+        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (_, checkedValue) => statsByWebView[webView].IsHorizontal = checkedValue);
+        statsButton.BackColor = state.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
+
+        menu.Items.AddRange([fpsItem, cpuItem, memoryItem, horizontalItem]);
+
+        statsButton.Click += (_, _) =>
+        {
+            if (menu.Visible)
+            {
+                menu.Close();
+                return;
+            }
+
+            if (!menuFilterAttached)
+            {
+                Application.AddMessageFilter(menuFilter);
+                menuFilterAttached = true;
+            }
+
+            menu.Show(statsButton, new Point(0, statsButton.Height));
+        };
+
+        menu.Closed += (_, _) =>
+        {
+            if (!menuFilterAttached)
+            {
+                return;
+            }
+
+            Application.RemoveMessageFilter(menuFilter);
+            menuFilterAttached = false;
+        };
+
+        ToolStripMenuItem CreateStatsMenuItem(string text, bool isChecked, Action<WebView2, bool> update)
+        {
+            var item = new ToolStripMenuItem(text)
+            {
+                AutoSize = false,
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Width = 148,
+                Height = 30,
+                Padding = Padding.Empty,
+                Tag = isChecked
+            };
+            item.Click += async (_, _) =>
+            {
+                var checkedValue = item.Tag is not true;
+                item.Tag = checkedValue;
+                update(webView, checkedValue);
+                var updatedState = statsByWebView[webView];
+                statsButton.BackColor = updatedState.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
+                profileStore.UpdateProfileStats(
+                    profile,
+                    updatedState.ShowFps,
+                    updatedState.ShowCpu,
+                    updatedState.ShowMemory,
+                    updatedState.IsHorizontal);
+                await SetNativeFpsCounterAsync(webView, updatedState.ShowFps);
+                await RefreshStatsOverlayAsync(webView);
+                EnsureStatsTimer(webView);
+            };
+
+            return item;
+        }
+    }
+
+    private void EnsureStatsTimer(WebView2 webView)
+    {
+        var state = statsByWebView[webView];
+
+        if (!state.AnyEnabled)
+        {
+            state.Timer?.Stop();
+            state.Timer?.Dispose();
+            state.Timer = null;
+            state.ResetSample();
+            return;
+        }
+
+        if (state.Timer is not null)
+        {
+            return;
+        }
+
+        state.ResetSample();
+        state.Timer = new System.Windows.Forms.Timer { Interval = 1000 };
+        state.Timer.Tick += async (_, _) => await RefreshStatsOverlayAsync(webView);
+        state.Timer.Start();
+    }
+
+    private async Task RefreshStatsOverlayAsync(WebView2 webView)
+    {
+        if (!statsByWebView.TryGetValue(webView, out var state) || webView.CoreWebView2 is null || webView.IsDisposed)
+        {
+            return;
+        }
+
+        if (!state.AnyEnabled)
+        {
+            await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(null));
+            return;
+        }
+
+        var snapshot = await CreateStatsSnapshotAsync(webView, state);
+        await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(snapshot));
+    }
+
+    private static async Task SetNativeFpsCounterAsync(WebView2 webView, bool show)
+    {
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var parameters = show ? "{\"show\":true}" : "{\"show\":false}";
+            await webView.CoreWebView2.CallDevToolsProtocolMethodAsync(
+                "Rendering.setShowFPSCounter",
+                parameters);
+        }
+        catch
+        {
+            // The FPS overlay is a Chromium debugging feature; unsupported runtimes should not break browsing.
+        }
+    }
+
+    private static async Task ExecuteStatsScriptAsync(WebView2 webView, string script)
+    {
+        try
+        {
+            await webView.CoreWebView2.ExecuteScriptAsync(script);
+        }
+        catch
+        {
+            // Page-script injection can fail during navigation; the next navigation completion will retry if enabled.
+        }
+    }
+
+    private Task<object> CreateStatsSnapshotAsync(WebView2 webView, StatsOverlayState state)
+    {
+        var cpuText = "--";
+        var memoryText = "--";
+
+        if (state.ShowCpu || state.ShowMemory)
+        {
+            SampleWebViewProcessTree(webView, state, out cpuText, out memoryText);
+        }
+
+        return Task.FromResult<object>(new
+        {
+            fps = state.ShowFps,
+            cpu = state.ShowCpu ? cpuText : null,
+            memory = state.ShowMemory ? memoryText : null,
+            horizontal = state.IsHorizontal
+        });
+    }
+
+    private static void SampleWebViewProcessTree(WebView2 webView, StatsOverlayState state, out string cpuText, out string memoryText)
+    {
+        cpuText = "--";
+        memoryText = "--";
+
+        try
+        {
+            var processIds = WebViewVolumeController.GetProcessTreeIds((int)webView.CoreWebView2.BrowserProcessId);
+            var totalProcessorTime = TimeSpan.Zero;
+            var totalMemoryBytes = 0L;
+
+            foreach (var processId in processIds)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(processId);
+                    totalProcessorTime += process.TotalProcessorTime;
+                    totalMemoryBytes += process.WorkingSet64;
+                }
+                catch
+                {
+                }
+            }
+
+            var now = DateTime.UtcNow;
+            if (state.LastSampleUtc is not null)
+            {
+                var elapsedSeconds = Math.Max(0.001, (now - state.LastSampleUtc.Value).TotalSeconds);
+                var cpuSeconds = Math.Max(0, (totalProcessorTime - state.LastProcessorTime).TotalSeconds);
+                var cpuPercent = Math.Clamp(cpuSeconds / elapsedSeconds / Environment.ProcessorCount * 100, 0, 999);
+                cpuText = $"{cpuPercent:0}%";
+            }
+
+            memoryText = $"{totalMemoryBytes / 1024d / 1024d:0} MB";
+            state.LastProcessorTime = totalProcessorTime;
+            state.LastSampleUtc = now;
+        }
+        catch
+        {
+        }
+    }
+
+    private static string CreateStatsOverlayScript(object? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return """
+                (() => {
+                    window.__multiWebViewStatsEnabled = false;
+                    if (window.__multiWebViewStatsFrame) {
+                        cancelAnimationFrame(window.__multiWebViewStatsFrame);
+                        window.__multiWebViewStatsFrame = 0;
+                    }
+                    document.getElementById("__multi_webview_stats_overlay")?.remove();
+                })();
+                """;
+        }
+
+        var json = JsonSerializer.Serialize(snapshot);
+        return """
+            (() => {
+                window.__multiWebViewStatsEnabled = true;
+                window.__multiWebViewStats = __SNAPSHOT__;
+
+                const existing = document.getElementById("__multi_webview_stats_overlay");
+
+                const overlay = existing || document.createElement("div");
+                overlay.id = "__multi_webview_stats_overlay";
+                overlay.style.cssText = [
+                    "position:fixed",
+                    "left:10px",
+                    "top:10px",
+                    "z-index:2147483647",
+                    "min-width:86px",
+                    "padding:6px 8px",
+                    "border:1px solid rgba(120,255,120,.45)",
+                    "border-radius:4px",
+                    "background:rgba(0,0,0,.72)",
+                    "color:#39ff5a",
+                    "font:700 13px Consolas, monospace",
+                    "line-height:1.35",
+                    "text-shadow:0 1px 2px #000",
+                    "pointer-events:none"
+                ].join(";");
+                if (!existing) {
+                    (document.body || document.documentElement).appendChild(overlay);
+                }
+
+                window.__multiWebViewStatsFrames ??= 0;
+                window.__multiWebViewStatsLast ??= performance.now();
+                window.__multiWebViewStatsFrameStart ??= window.__multiWebViewStatsLast;
+                window.__multiWebViewStatsFps ??= "--";
+                window.__multiWebViewStatsFrameMs ??= "--";
+
+                const render = () => {
+                    const data = window.__multiWebViewStats || {};
+                    const lines = [];
+                    if (data.fps) {
+                        lines.push(`<span style="color:#39ff5a">FPS</span> ${window.__multiWebViewStatsFps}`);
+                        lines.push(`<span style="color:#ffffff">LAT</span> ${window.__multiWebViewStatsFrameMs} ms`);
+                    }
+                    if (data.cpu !== null && data.cpu !== undefined) {
+                        lines.push(`<span style="color:#7fc7ff">CPU</span> ${data.cpu}`);
+                    }
+                    if (data.memory !== null && data.memory !== undefined) {
+                        lines.push(`<span style="color:#ffcf5a">MEM</span> ${data.memory}`);
+                    }
+                    overlay.innerHTML = data.horizontal ? lines.join(" <span style=\"color:#777\">|</span> ") : lines.join("<br>");
+                };
+
+                const tick = now => {
+                    if (!window.__multiWebViewStatsEnabled) {
+                        overlay.remove();
+                        window.__multiWebViewStatsFrame = 0;
+                        return;
+                    }
+
+                    window.__multiWebViewStatsFrames++;
+                    window.__multiWebViewStatsFrameMs = (now - window.__multiWebViewStatsFrameStart).toFixed(1);
+                    window.__multiWebViewStatsFrameStart = now;
+
+                    if (now - window.__multiWebViewStatsLast >= 500) {
+                        window.__multiWebViewStatsFps = Math.round(
+                            window.__multiWebViewStatsFrames * 1000 / (now - window.__multiWebViewStatsLast));
+                        window.__multiWebViewStatsFrames = 0;
+                        window.__multiWebViewStatsLast = now;
+                        render();
+                    }
+
+                    window.__multiWebViewStatsFrame = requestAnimationFrame(tick);
+                };
+
+                render();
+                if (!window.__multiWebViewStatsFrame) {
+                    window.__multiWebViewStatsFrame = requestAnimationFrame(tick);
+                }
+            })();
+            """.Replace("__SNAPSHOT__", json);
     }
 
     private async Task SaveScreenshotAsync(WebView2 webView, Profile profile)
@@ -647,12 +993,32 @@ public sealed class MultiViewForm : Form
             var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
             await webView.EnsureCoreWebView2Async(environment);
+            webView.CoreWebView2.WebMessageReceived += (_, args) =>
+            {
+                if (args.TryGetWebMessageAsString() == "__multi_webview_close_stats_menu")
+                {
+                    CloseStatsMenus();
+                }
+            };
+            webView.CoreWebView2.NavigationCompleted += async (_, _) =>
+            {
+                if (statsByWebView.GetValueOrDefault(webView)?.AnyEnabled == true)
+                {
+                    await RefreshStatsOverlayAsync(webView);
+                }
+
+                await InstallStatsMenuCloseHandlersAsync(webView);
+            };
+            webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => CloseStatsMenus();
             await WebViewVolumeController.EnsureAudioSessionAsync(webView);
             await WebViewVolumeController.ConfigureAsync(
                 webView,
                 () => volumeByWebView.GetValueOrDefault(webView, 100),
                 () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
                 () => profile.Name);
+            await SetNativeFpsCounterAsync(webView, statsByWebView.GetValueOrDefault(webView)?.ShowFps == true);
+            await RefreshStatsOverlayAsync(webView);
+            EnsureStatsTimer(webView);
             webView.Source = new Uri(profile.StartUrl);
         }
     }
@@ -826,14 +1192,205 @@ public sealed class MultiViewForm : Form
         btnMax.BackColor = btnNormal;
     }
 
+    private void CloseStatsMenus()
+    {
+        foreach (var menu in statsMenus)
+        {
+            if (menu.Visible)
+            {
+                menu.Close();
+            }
+        }
+    }
+
+    private async Task InstallStatsMenuCloseHandlersAsync(WebView2 webView)
+    {
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await webView.CoreWebView2.ExecuteScriptAsync("""
+                (() => {
+                    if (window.__multiWebViewStatsMenuCloseHooked) {
+                        return;
+                    }
+
+                    window.__multiWebViewStatsMenuCloseHooked = true;
+                    const closeMenu = () => chrome.webview.postMessage("__multi_webview_close_stats_menu");
+                    window.addEventListener("pointerdown", closeMenu, true);
+                    window.addEventListener("mousedown", closeMenu, true);
+                    window.addEventListener("touchstart", closeMenu, true);
+                    window.addEventListener("wheel", closeMenu, true);
+                })();
+                """);
+        }
+        catch
+        {
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            foreach (var state in statsByWebView.Values)
+            {
+                state.Timer?.Stop();
+                state.Timer?.Dispose();
+            }
+
             toolTip.Dispose();
             trayIcon.Dispose();
         }
 
         base.Dispose(disposing);
+    }
+
+    private sealed class StatsOverlayState
+    {
+        public bool ShowFps { get; set; }
+        public bool ShowCpu { get; set; }
+        public bool ShowMemory { get; set; }
+        public bool IsHorizontal { get; set; }
+        public System.Windows.Forms.Timer? Timer { get; set; }
+        public DateTime? LastSampleUtc { get; set; }
+        public TimeSpan LastProcessorTime { get; set; }
+        public bool AnyEnabled => ShowFps || ShowCpu || ShowMemory;
+
+        public void ResetSample()
+        {
+            LastSampleUtc = null;
+            LastProcessorTime = TimeSpan.Zero;
+        }
+    }
+
+    private sealed class StatsMenuRenderer : ToolStripProfessionalRenderer
+    {
+        private static readonly Color MenuBack = Color.FromArgb(18, 18, 18);
+        private static readonly Color MenuBorder = Color.FromArgb(64, 64, 64);
+        private static readonly Color ItemHover = Color.FromArgb(42, 42, 42);
+        private static readonly Color TextColor = Color.White;
+
+        public StatsMenuRenderer()
+            : base(new StatsMenuColorTable())
+        {
+            RoundedEdges = false;
+        }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            using var brush = new SolidBrush(MenuBack);
+            e.Graphics.FillRectangle(brush, e.AffectedBounds);
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            using var pen = new Pen(MenuBorder);
+            var bounds = new Rectangle(Point.Empty, e.ToolStrip.Size - new Size(1, 1));
+            e.Graphics.DrawRectangle(pen, bounds);
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            using var brush = new SolidBrush(e.Item.Selected ? ItemHover : MenuBack);
+            e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
+        }
+
+        protected override void OnRenderItemImage(ToolStripItemImageRenderEventArgs e)
+        {
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            var checkBounds = new Rectangle(10, Math.Max(0, (e.Item.Height - 16) / 2), 16, 16);
+            using var boxBrush = new SolidBrush(Color.FromArgb(18, 18, 18));
+            using var boxBorderPen = new Pen(Color.FromArgb(95, 95, 95));
+            e.Graphics.FillRectangle(boxBrush, checkBounds);
+            e.Graphics.DrawRectangle(boxBorderPen, checkBounds);
+
+            if (e.Item.Tag is true)
+            {
+                using var checkPen = new Pen(Color.FromArgb(57, 255, 90), 2.4F)
+                {
+                    StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                    EndCap = System.Drawing.Drawing2D.LineCap.Round
+                };
+                e.Graphics.DrawLines(
+                    checkPen,
+                    [
+                        new Point(checkBounds.Left + 3, checkBounds.Top + 8),
+                        new Point(checkBounds.Left + 7, checkBounds.Top + 12),
+                        new Point(checkBounds.Left + 13, checkBounds.Top + 4)
+                    ]);
+            }
+
+            var textBounds = new Rectangle(38, 0, Math.Max(0, e.Item.Width - 46), e.Item.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                e.Text,
+                e.TextFont,
+                textBounds,
+                TextColor,
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.Left |
+                TextFormatFlags.SingleLine |
+                TextFormatFlags.NoPadding);
+        }
+
+        private sealed class StatsMenuColorTable : ProfessionalColorTable
+        {
+            public override Color ToolStripDropDownBackground => MenuBack;
+            public override Color MenuBorder => StatsMenuRenderer.MenuBorder;
+            public override Color MenuItemSelected => ItemHover;
+            public override Color MenuItemBorder => ItemHover;
+            public override Color ImageMarginGradientBegin => MenuBack;
+            public override Color ImageMarginGradientMiddle => MenuBack;
+            public override Color ImageMarginGradientEnd => MenuBack;
+        }
+    }
+
+    private sealed class StatsMenuMessageFilter : IMessageFilter
+    {
+        private const int WmLeftButtonDown = 0x0201;
+        private const int WmRightButtonDown = 0x0204;
+        private const int WmMiddleButtonDown = 0x0207;
+        private const int WmNonClientLeftButtonDown = 0x00A1;
+
+        private readonly ContextMenuStrip menu;
+        private readonly Control ownerButton;
+
+        public StatsMenuMessageFilter(ContextMenuStrip menu, Control ownerButton)
+        {
+            this.menu = menu;
+            this.ownerButton = ownerButton;
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (!menu.Visible || !IsMouseDownMessage(m.Msg))
+            {
+                return false;
+            }
+
+            var cursorPosition = Cursor.Position;
+            var buttonBounds = ownerButton.RectangleToScreen(ownerButton.ClientRectangle);
+
+            if (!menu.Bounds.Contains(cursorPosition) && !buttonBounds.Contains(cursorPosition))
+            {
+                menu.Close();
+            }
+
+            return false;
+        }
+
+        private static bool IsMouseDownMessage(int message)
+        {
+            return message is WmLeftButtonDown or WmRightButtonDown or WmMiddleButtonDown or WmNonClientLeftButtonDown;
+        }
     }
 }
