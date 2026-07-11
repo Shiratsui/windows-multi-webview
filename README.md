@@ -76,7 +76,7 @@ Each WebView tile has a `STAT` menu with checkboxes for:
 
 When `FPS` is enabled, the overlay also shows `LAT`, which is render frame time in milliseconds, not network ping or server latency.
 
-The stats menu stays open while toggling options, closes when `STAT` is clicked again, and closes when the user clicks the page, clicks outside the menu, or switches to another application. GPU usage is not shown because WebView2 and normal Windows APIs do not expose reliable per-WebView GPU utilization.
+Stats selections are saved per profile, so reopening the same profile restores its last selected overlay options. The stats menu stays open while toggling options, closes when `STAT` is clicked again, and closes when the user clicks the page, clicks outside the menu, or switches to another application. GPU usage is not shown because WebView2 and normal Windows APIs do not expose reliable per-WebView GPU utilization.
 
 ## Audio Controls
 
@@ -102,7 +102,7 @@ The app also stores its settings at:
 %LOCALAPPDATA%\MultiWebView\settings.json
 ```
 
-Each profile has a stable ID, display name, start URL, timestamps, saved audio state, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
+Each profile has a stable ID, display name, start URL, timestamps, saved audio state, saved stats overlay options, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
 
 Screenshots are saved automatically under:
 

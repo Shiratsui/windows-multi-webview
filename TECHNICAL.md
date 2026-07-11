@@ -50,6 +50,10 @@ Current fields:
 - `StartUrl`: normalized HTTP/HTTPS URL opened for that profile.
 - `VolumePercent`: saved audio volume, clamped to `0..100`.
 - `IsMuted`: saved mute state.
+- `ShowStatsFps`: saved stats overlay FPS setting.
+- `ShowStatsCpu`: saved stats overlay CPU setting.
+- `ShowStatsMemory`: saved stats overlay memory setting.
+- `ShowStatsHorizontal`: saved stats overlay horizontal layout setting.
 
 The profile ID is used as the persistent folder name and the key for open/selected profile tracking.
 
@@ -162,6 +166,8 @@ The stats overlay itself is injected into the page with `ExecuteScriptAsync(...)
 - Host-side timer for CPU and memory samples.
 
 `LAT` is render frame time in milliseconds. It is not network ping or server latency.
+
+Stats selections are persisted per profile through `ProfileStore.UpdateProfileStats(...)`. `CreateTile(...)` initializes each tile's `StatsOverlayState` and check marks from the profile's saved stats fields. After `EnsureCoreWebView2Async(...)`, saved stats are applied by refreshing the injected overlay, starting the stats timer when needed, and enabling Chromium's native FPS counter path when FPS is selected.
 
 CPU and memory are sampled approximately from the WebView2 process tree. The root is `CoreWebView2.BrowserProcessId`; the process tree is found by reusing `WebViewVolumeController.GetProcessTreeIds(...)`. CPU is computed from the delta of summed `Process.TotalProcessorTime` over elapsed wall time and normalized by `Environment.ProcessorCount`. Memory is the summed `WorkingSet64` of the same process tree.
 
@@ -335,7 +341,7 @@ The local `main` branch was ahead of `origin/main` by that commit.
 
 Prefer keeping audio behavior centralized in `WebViewVolumeController`. `MultiViewForm` should pass profile-specific state into the controller, but it should not duplicate Core Audio enumeration logic.
 
-When changing profile persistence, update both the top-level `profiles.json` flow and the per-profile `profile.json` snapshot flow in `ProfileStore.SaveProfiles()`.
+When changing profile persistence, update both the top-level `profiles.json` flow and the per-profile `profile.json` snapshot flow in `ProfileStore.SaveProfiles()`. Runtime profile setting changes should update the in-memory `Profile` object and the saved copy, following the pattern used by `UpdateProfileAudio(...)` and `UpdateProfileStats(...)`.
 
 When changing WebView creation, preserve the order:
 

@@ -378,7 +378,13 @@ public sealed class MultiViewForm : Form
         var tileWebView = webView;
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
-        statsByWebView[tileWebView] = new StatsOverlayState();
+        statsByWebView[tileWebView] = new StatsOverlayState
+        {
+            ShowFps = profile.ShowStatsFps,
+            ShowCpu = profile.ShowStatsCpu,
+            ShowMemory = profile.ShowStatsMemory,
+            IsHorizontal = profile.ShowStatsHorizontal
+        };
         WebViewVolumeController.Attach(
             tileWebView,
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
@@ -400,7 +406,7 @@ public sealed class MultiViewForm : Form
             OpenProfileFolder(profile);
         };
 
-        ConfigureStatsButton(fpsButton, tileWebView);
+        ConfigureStatsButton(fpsButton, tileWebView, profile);
 
         volumeSlider.ValueChanged += (_, _) =>
         {
@@ -433,7 +439,7 @@ public sealed class MultiViewForm : Form
         return tile;
     }
 
-    private void ConfigureStatsButton(Button statsButton, WebView2 webView)
+    private void ConfigureStatsButton(Button statsButton, WebView2 webView, Profile profile)
     {
         var menu = new ContextMenuStrip
         {
@@ -448,10 +454,12 @@ public sealed class MultiViewForm : Form
         var menuFilterAttached = false;
         statsMenus.Add(menu);
 
-        var fpsItem = CreateStatsMenuItem("FPS", (_, checkedValue) => statsByWebView[webView].ShowFps = checkedValue);
-        var cpuItem = CreateStatsMenuItem("CPU", (_, checkedValue) => statsByWebView[webView].ShowCpu = checkedValue);
-        var memoryItem = CreateStatsMenuItem("Memory", (_, checkedValue) => statsByWebView[webView].ShowMemory = checkedValue);
-        var horizontalItem = CreateStatsMenuItem("Horizontal", (_, checkedValue) => statsByWebView[webView].IsHorizontal = checkedValue);
+        var state = statsByWebView[webView];
+        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (_, checkedValue) => statsByWebView[webView].ShowFps = checkedValue);
+        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (_, checkedValue) => statsByWebView[webView].ShowCpu = checkedValue);
+        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (_, checkedValue) => statsByWebView[webView].ShowMemory = checkedValue);
+        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (_, checkedValue) => statsByWebView[webView].IsHorizontal = checkedValue);
+        statsButton.BackColor = state.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
 
         menu.Items.AddRange([fpsItem, cpuItem, memoryItem, horizontalItem]);
 
@@ -483,7 +491,7 @@ public sealed class MultiViewForm : Form
             menuFilterAttached = false;
         };
 
-        ToolStripMenuItem CreateStatsMenuItem(string text, Action<WebView2, bool> update)
+        ToolStripMenuItem CreateStatsMenuItem(string text, bool isChecked, Action<WebView2, bool> update)
         {
             var item = new ToolStripMenuItem(text)
             {
@@ -493,15 +501,22 @@ public sealed class MultiViewForm : Form
                 Width = 148,
                 Height = 30,
                 Padding = Padding.Empty,
-                Tag = false
+                Tag = isChecked
             };
             item.Click += async (_, _) =>
             {
                 var checkedValue = item.Tag is not true;
                 item.Tag = checkedValue;
                 update(webView, checkedValue);
-                statsButton.BackColor = statsByWebView[webView].AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
-                await SetNativeFpsCounterAsync(webView, statsByWebView[webView].ShowFps);
+                var updatedState = statsByWebView[webView];
+                statsButton.BackColor = updatedState.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
+                profileStore.UpdateProfileStats(
+                    profile,
+                    updatedState.ShowFps,
+                    updatedState.ShowCpu,
+                    updatedState.ShowMemory,
+                    updatedState.IsHorizontal);
+                await SetNativeFpsCounterAsync(webView, updatedState.ShowFps);
                 await RefreshStatsOverlayAsync(webView);
                 EnsureStatsTimer(webView);
             };
@@ -1001,7 +1016,9 @@ public sealed class MultiViewForm : Form
                 () => volumeByWebView.GetValueOrDefault(webView, 100),
                 () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
                 () => profile.Name);
+            await SetNativeFpsCounterAsync(webView, statsByWebView.GetValueOrDefault(webView)?.ShowFps == true);
             await RefreshStatsOverlayAsync(webView);
+            EnsureStatsTimer(webView);
             webView.Source = new Uri(profile.StartUrl);
         }
     }

@@ -125,6 +125,36 @@ public sealed class ProfileStore
         SaveProfiles(profiles);
     }
 
+    public void UpdateProfileStats(
+        Profile selectedProfile,
+        bool showFps,
+        bool showCpu,
+        bool showMemory,
+        bool showHorizontal)
+    {
+        selectedProfile.ShowStatsFps = showFps;
+        selectedProfile.ShowStatsCpu = showCpu;
+        selectedProfile.ShowStatsMemory = showMemory;
+        selectedProfile.ShowStatsHorizontal = showHorizontal;
+
+        var profiles = LoadProfiles().ToList();
+        var profile = profiles.FirstOrDefault(item => item.Id == selectedProfile.Id);
+
+        if (profile is null)
+        {
+            profiles.Add(selectedProfile);
+        }
+        else
+        {
+            profile.ShowStatsFps = showFps;
+            profile.ShowStatsCpu = showCpu;
+            profile.ShowStatsMemory = showMemory;
+            profile.ShowStatsHorizontal = showHorizontal;
+        }
+
+        SaveProfiles(profiles);
+    }
+
     public void DeleteProfile(Profile selectedProfile)
     {
         var profiles = LoadProfiles()
