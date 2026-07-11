@@ -12,6 +12,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
 - Close the profile picker to the system tray and restore it from the tray icon.
+- Hide multi-view browser windows to the system tray with a dedicated tray button.
 - Keep windows on top with the pin button.
 - Single-instance startup: launching the app again focuses the existing picker.
 
@@ -57,6 +58,7 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 6. Use the refresh button, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
+9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar or the tray button to hide the window to the system tray. Double-click its tray icon or use tray menu `Restore` to show it again.
 
 Profiles that are already open cannot be selected again until their browser window is closed.
 
@@ -65,6 +67,8 @@ Profiles that are already open cannot be selected again until their browser wind
 Each browser header includes a refresh button, mute button, and volume slider. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
 
 Volume is applied through the Windows audio session for the WebView2 process tree and is reapplied while the WebView is open. This keeps the saved profile volume and mute state in place even if WebView2 recreates its audio sessions.
+
+When a multi-view browser window is hidden to the system tray, the app force-mutes its WebViews at runtime. Restoring the window reapplies each profile's normal saved or current mute state.
 
 When a WebView is initialized, the app creates an inaudible Web Audio session before the first navigation. This gives Windows Volume Mixer a session to display and lets the app apply the saved volume before the page plays real audio.
 
@@ -102,7 +106,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. The profile picker close button hides to tray; `Alt+F4` exits. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray-hide controls. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.
