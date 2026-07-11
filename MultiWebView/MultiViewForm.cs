@@ -327,7 +327,7 @@ public sealed class MultiViewForm : Form
         WebViewVolumeController.Attach(
             tileWebView,
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
-            () => mutedByWebView.GetValueOrDefault(tileWebView),
+            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(tileWebView),
             () => profile.Name);
 
         refreshButton.Click += (_, _) =>
@@ -340,7 +340,11 @@ public sealed class MultiViewForm : Form
             volumeValue.Text = $"{volumeSlider.Value}%";
             volumeByWebView[tileWebView] = volumeSlider.Value;
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
-            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted, profile.Name);
+            _ = WebViewVolumeController.ApplyAsync(
+                tileWebView,
+                volumeSlider.Value,
+                isMinimizedToTray || muted,
+                profile.Name);
         };
 
         muteButton.Click += (_, _) =>
@@ -350,7 +354,11 @@ public sealed class MultiViewForm : Form
             muteButton.Text = muted ? "🔇" : "🔊";
             muteButton.BackColor = muted ? btnActive : Color.FromArgb(38, 38, 38);
             profileStore.UpdateProfileAudio(profile, volumeSlider.Value, muted);
-            _ = WebViewVolumeController.ApplyAsync(tileWebView, volumeSlider.Value, muted, profile.Name);
+            _ = WebViewVolumeController.ApplyAsync(
+                tileWebView,
+                volumeSlider.Value,
+                isMinimizedToTray || muted,
+                profile.Name);
         };
 
         tile.Controls.Add(tileWebView, 0, 1);
@@ -372,7 +380,7 @@ public sealed class MultiViewForm : Form
             await WebViewVolumeController.ConfigureAsync(
                 webView,
                 () => volumeByWebView.GetValueOrDefault(webView, 100),
-                () => mutedByWebView.GetValueOrDefault(webView),
+                () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
                 () => profile.Name);
             webView.Source = new Uri(profile.StartUrl);
         }
@@ -501,6 +509,7 @@ public sealed class MultiViewForm : Form
         ResetTitleButtonColors();
         isMinimizedToTray = true;
         trayIcon.Visible = true;
+        _ = ApplyTrayMuteStateAsync(true);
         Hide();
         ShowInTaskbar = false;
     }
@@ -515,10 +524,27 @@ public sealed class MultiViewForm : Form
         isMinimizedToTray = false;
         ShowInTaskbar = true;
         Show();
+        _ = ApplyTrayMuteStateAsync(false);
         ResetTitleButtonColors();
         trayIcon.Visible = false;
         Activate();
         BringToFront();
+    }
+
+    private async Task ApplyTrayMuteStateAsync(bool muted)
+    {
+        for (var index = 0; index < webViews.Count; index++)
+        {
+            var webView = webViews[index];
+            var profile = profiles[index];
+            var effectiveMuted = muted || mutedByWebView.GetValueOrDefault(webView);
+
+            await WebViewVolumeController.ApplyAsync(
+                webView,
+                volumeByWebView.GetValueOrDefault(webView, 100),
+                effectiveMuted,
+                profile.Name);
+        }
     }
 
     private void ResetTitleButtonColors()
