@@ -14,6 +14,7 @@ public sealed class MultiViewForm : Form
     private readonly List<WebView2> webViews = [];
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
+    private readonly Dictionary<WebView2, bool> fpsCounterByWebView = [];
     private readonly ToolTip toolTip = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
@@ -249,7 +250,7 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 7,
+            ColumnCount = 8,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
             Padding = new Padding(8, 0, 6, 0)
@@ -258,6 +259,7 @@ public sealed class MultiViewForm : Form
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
@@ -315,6 +317,20 @@ public sealed class MultiViewForm : Form
         toolTip.SetToolTip(folderButton, "Show profile folder");
         header.Controls.Add(folderButton, 3, 0);
 
+        var fpsButton = new Button
+        {
+            Text = "FPS",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        fpsButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(fpsButton, "Show FPS counter");
+        header.Controls.Add(fpsButton, 4, 0);
+
         var volumeValue = new Label
         {
             Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
@@ -324,7 +340,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 4, 0);
+        header.Controls.Add(volumeValue, 5, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -337,7 +353,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 5, 0);
+        header.Controls.Add(muteButton, 6, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -348,7 +364,7 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 6, 0);
+        header.Controls.Add(volumeSlider, 7, 0);
 
         tile.Controls.Add(header, 0, 0);
 
@@ -359,6 +375,7 @@ public sealed class MultiViewForm : Form
         var tileWebView = webView;
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
+        fpsCounterByWebView[tileWebView] = false;
         WebViewVolumeController.Attach(
             tileWebView,
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
@@ -378,6 +395,14 @@ public sealed class MultiViewForm : Form
         folderButton.Click += (_, _) =>
         {
             OpenProfileFolder(profile);
+        };
+
+        fpsButton.Click += async (_, _) =>
+        {
+            var showFpsCounter = !fpsCounterByWebView.GetValueOrDefault(tileWebView);
+            fpsCounterByWebView[tileWebView] = showFpsCounter;
+            fpsButton.BackColor = showFpsCounter ? btnActive : Color.FromArgb(38, 38, 38);
+            await SetFpsCounterAsync(tileWebView, showFpsCounter);
         };
 
         volumeSlider.ValueChanged += (_, _) =>
@@ -409,6 +434,114 @@ public sealed class MultiViewForm : Form
         tile.Controls.Add(tileWebView, 0, 1);
 
         return tile;
+    }
+
+    private static async Task SetFpsCounterAsync(WebView2 webView, bool show)
+    {
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var parameters = show ? "{\"show\":true}" : "{\"show\":false}";
+            await webView.CoreWebView2.CallDevToolsProtocolMethodAsync(
+                "Rendering.setShowFPSCounter",
+                parameters);
+        }
+        catch
+        {
+            // The FPS overlay is a Chromium debugging feature; unsupported runtimes should not break browsing.
+        }
+
+        try
+        {
+            await webView.CoreWebView2.ExecuteScriptAsync(CreateFpsCounterScript(show));
+        }
+        catch
+        {
+            // Page-script injection can fail during navigation; the next navigation completion will retry if enabled.
+        }
+    }
+
+    private static string CreateFpsCounterScript(bool show)
+    {
+        if (!show)
+        {
+            return """
+                (() => {
+                    window.__multiWebViewFpsEnabled = false;
+                    if (window.__multiWebViewFpsFrame) {
+                        cancelAnimationFrame(window.__multiWebViewFpsFrame);
+                        window.__multiWebViewFpsFrame = 0;
+                    }
+                    document.getElementById("__multi_webview_fps_overlay")?.remove();
+                })();
+                """;
+        }
+
+        return """
+            (() => {
+                window.__multiWebViewFpsEnabled = true;
+
+                const existing = document.getElementById("__multi_webview_fps_overlay");
+                if (existing && window.__multiWebViewFpsFrame) {
+                    return;
+                }
+
+                const overlay = existing || document.createElement("div");
+                overlay.id = "__multi_webview_fps_overlay";
+                overlay.style.cssText = [
+                    "position:fixed",
+                    "left:10px",
+                    "top:10px",
+                    "z-index:2147483647",
+                    "min-width:86px",
+                    "padding:6px 8px",
+                    "border:1px solid rgba(120,255,120,.45)",
+                    "border-radius:4px",
+                    "background:rgba(0,0,0,.72)",
+                    "color:#39ff5a",
+                    "font:700 13px Consolas, monospace",
+                    "line-height:1.35",
+                    "text-shadow:0 1px 2px #000",
+                    "pointer-events:none"
+                ].join(";");
+                overlay.textContent = "FPS: --";
+                (document.body || document.documentElement).appendChild(overlay);
+
+                let frames = 0;
+                let last = performance.now();
+                let frameStart = last;
+
+                const tick = (now) => {
+                    if (!window.__multiWebViewFpsEnabled) {
+                        overlay.remove();
+                        window.__multiWebViewFpsFrame = 0;
+                        return;
+                    }
+
+                    frames++;
+                    const frameMs = now - frameStart;
+                    frameStart = now;
+
+                    if (now - last >= 500) {
+                        const fps = Math.round(frames * 1000 / (now - last));
+                        overlay.innerHTML = `FPS: ${fps}<br><span style="color:#fff;font-weight:400">${frameMs.toFixed(1)} ms</span>`;
+                        frames = 0;
+                        last = now;
+                    }
+
+                    window.__multiWebViewFpsFrame = requestAnimationFrame(tick);
+                };
+
+                if (window.__multiWebViewFpsFrame) {
+                    cancelAnimationFrame(window.__multiWebViewFpsFrame);
+                }
+                window.__multiWebViewFpsFrame = requestAnimationFrame(tick);
+            })();
+            """;
     }
 
     private async Task SaveScreenshotAsync(WebView2 webView, Profile profile)
@@ -647,12 +780,20 @@ public sealed class MultiViewForm : Form
             var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
             await webView.EnsureCoreWebView2Async(environment);
+            webView.CoreWebView2.NavigationCompleted += async (_, _) =>
+            {
+                if (fpsCounterByWebView.GetValueOrDefault(webView))
+                {
+                    await SetFpsCounterAsync(webView, true);
+                }
+            };
             await WebViewVolumeController.EnsureAudioSessionAsync(webView);
             await WebViewVolumeController.ConfigureAsync(
                 webView,
                 () => volumeByWebView.GetValueOrDefault(webView, 100),
                 () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
                 () => profile.Name);
+            await SetFpsCounterAsync(webView, fpsCounterByWebView.GetValueOrDefault(webView));
             webView.Source = new Uri(profile.StartUrl);
         }
     }
