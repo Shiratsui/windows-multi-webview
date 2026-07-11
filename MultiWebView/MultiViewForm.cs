@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
 namespace MultiWebView;
@@ -247,12 +249,14 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 5,
+            ColumnCount = 7,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
             Padding = new Padding(8, 0, 6, 0)
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
@@ -283,6 +287,34 @@ public sealed class MultiViewForm : Form
         toolTip.SetToolTip(refreshButton, "Refresh");
         header.Controls.Add(refreshButton, 1, 0);
 
+        var screenshotButton = new Button
+        {
+            Text = "📷",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI Emoji", 9F, FontStyle.Regular),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        screenshotButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(screenshotButton, "Save screenshot to profile folder");
+        header.Controls.Add(screenshotButton, 2, 0);
+
+        var folderButton = new Button
+        {
+            Text = "📁",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI Emoji", 9F, FontStyle.Regular),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        folderButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(folderButton, "Show profile folder");
+        header.Controls.Add(folderButton, 3, 0);
+
         var volumeValue = new Label
         {
             Text = $"{Math.Clamp(profile.VolumePercent, 0, 100)}%",
@@ -292,7 +324,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 2, 0);
+        header.Controls.Add(volumeValue, 4, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -305,7 +337,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 3, 0);
+        header.Controls.Add(muteButton, 5, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -316,7 +348,7 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 4, 0);
+        header.Controls.Add(volumeSlider, 6, 0);
 
         tile.Controls.Add(header, 0, 0);
 
@@ -336,6 +368,16 @@ public sealed class MultiViewForm : Form
         refreshButton.Click += (_, _) =>
         {
             tileWebView.CoreWebView2?.Reload();
+        };
+
+        screenshotButton.Click += async (_, _) =>
+        {
+            await SaveScreenshotAsync(tileWebView, profile);
+        };
+
+        folderButton.Click += (_, _) =>
+        {
+            OpenProfileFolder(profile);
         };
 
         volumeSlider.ValueChanged += (_, _) =>
@@ -367,6 +409,232 @@ public sealed class MultiViewForm : Form
         tile.Controls.Add(tileWebView, 0, 1);
 
         return tile;
+    }
+
+    private async Task SaveScreenshotAsync(WebView2 webView, Profile profile)
+    {
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var screenshotsFolder = GetScreenshotsFolder(profile);
+            Directory.CreateDirectory(screenshotsFolder);
+
+            var screenshotPath = Path.Combine(screenshotsFolder, CreateScreenshotFileName(profile));
+            await using var stream = File.Create(screenshotPath);
+            await webView.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+            ShowTemporaryStatus(webView, profile, "Screenshot Taken", $"Saved on {screenshotPath}");
+        }
+        catch
+        {
+            // Screenshot capture is intentionally silent from the UI.
+        }
+    }
+
+    private void OpenProfileFolder(Profile profile)
+    {
+        var profileFolder = profileStore.GetProfileFolder(profile);
+        Directory.CreateDirectory(profileFolder);
+        Directory.CreateDirectory(GetScreenshotsFolder(profile));
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = profileFolder,
+            UseShellExecute = true
+        });
+    }
+
+    private void OpenScreenshotsFolder(Profile profile)
+    {
+        var screenshotsFolder = GetScreenshotsFolder(profile);
+        Directory.CreateDirectory(screenshotsFolder);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = screenshotsFolder,
+            UseShellExecute = true
+        });
+    }
+
+    private string GetScreenshotsFolder(Profile profile)
+    {
+        return Path.Combine(profileStore.GetProfileFolder(profile), "screenshots");
+    }
+
+    private static string CreateScreenshotFileName(Profile profile)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitizedName = new string(profile.Name
+            .Select(character => invalidChars.Contains(character) ? '_' : character)
+            .ToArray())
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(sanitizedName))
+        {
+            sanitizedName = "WebView";
+        }
+
+        return $"{sanitizedName}-{DateTime.Now:yyyyMMdd-HHmmss}.png";
+    }
+
+    private void ShowTemporaryStatus(Control target, Profile profile, string title, string detail)
+    {
+        const int toastWidth = 430;
+        const int toastHeight = 92;
+        const int toastMargin = 16;
+        var toastColor = Color.FromArgb(20, 135, 78);
+
+        var targetScreenBounds = new Rectangle(target.PointToScreen(Point.Empty), target.ClientSize);
+        var finalLocation = new Point(
+            targetScreenBounds.Right - toastWidth - toastMargin,
+            targetScreenBounds.Top + toastMargin);
+
+        var popup = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            ShowInTaskbar = false,
+            TopMost = true,
+            BackColor = toastColor,
+            Size = new Size(toastWidth, toastHeight),
+            Location = new Point(finalLocation.X, finalLocation.Y - toastHeight - 8),
+            Opacity = 1
+        };
+
+        SetFormIcon(popup);
+
+        var content = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 3,
+            ColumnCount = 1,
+            BackColor = toastColor,
+            Padding = new Padding(14, 8, 14, 8)
+        };
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var titleLabel = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = toastColor,
+            Font = new Font("Segoe UI", 10.5F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
+        };
+
+        var detailLabel = new Label
+        {
+            Text = detail,
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(225, 255, 238),
+            BackColor = toastColor,
+            Font = new Font("Segoe UI", 8F, FontStyle.Regular),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
+        };
+
+        var footerLabel = new Label
+        {
+            Text = "Click to view folder",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(205, 255, 226),
+            BackColor = toastColor,
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
+        };
+
+        void AttachOpenFolderClick(Control control)
+        {
+            control.Cursor = Cursors.Hand;
+            control.Click += (_, _) =>
+            {
+                if (!popup.IsDisposed)
+                {
+                    popup.Close();
+                    popup.Dispose();
+                }
+
+                OpenScreenshotsFolder(profile);
+            };
+        }
+
+        content.Controls.Add(titleLabel, 0, 0);
+        content.Controls.Add(detailLabel, 0, 1);
+        content.Controls.Add(footerLabel, 0, 2);
+        popup.Controls.Add(content);
+        AttachOpenFolderClick(popup);
+        AttachOpenFolderClick(content);
+        AttachOpenFolderClick(titleLabel);
+        AttachOpenFolderClick(detailLabel);
+        AttachOpenFolderClick(footerLabel);
+
+        var slideTimer = new System.Windows.Forms.Timer { Interval = 15 };
+        slideTimer.Tick += (_, _) =>
+        {
+            if (popup.IsDisposed)
+            {
+                slideTimer.Stop();
+                slideTimer.Dispose();
+                return;
+            }
+
+            var nextY = Math.Min(finalLocation.Y, popup.Top + 10);
+            popup.Location = new Point(finalLocation.X, nextY);
+
+            if (nextY == finalLocation.Y)
+            {
+                slideTimer.Stop();
+            }
+        };
+
+        var closeTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+        var fadeTimer = new System.Windows.Forms.Timer { Interval = 30 };
+        fadeTimer.Tick += (_, _) =>
+        {
+            if (popup.IsDisposed)
+            {
+                fadeTimer.Stop();
+                fadeTimer.Dispose();
+                return;
+            }
+
+            popup.Opacity -= 0.08;
+            if (popup.Opacity > 0.05)
+            {
+                return;
+            }
+
+            fadeTimer.Stop();
+            closeTimer.Stop();
+            slideTimer.Stop();
+            fadeTimer.Dispose();
+            closeTimer.Dispose();
+            slideTimer.Dispose();
+            popup.Close();
+            popup.Dispose();
+        };
+
+        closeTimer.Tick += (_, _) =>
+        {
+            closeTimer.Stop();
+            slideTimer.Stop();
+            fadeTimer.Start();
+        };
+
+        popup.Shown += (_, _) =>
+        {
+            slideTimer.Start();
+            closeTimer.Start();
+        };
+        popup.Show(this);
     }
 
     private async Task InitializeWebViewsAsync()

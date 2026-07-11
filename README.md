@@ -8,6 +8,8 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Open newly created profiles in a one-tile multi-view browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
 - Refresh individual WebView tiles from their browser headers.
+- Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
+- Open an individual profile folder from its WebView tile header.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker.
 - Change and open the profile storage folder from the app.
@@ -55,7 +57,7 @@ MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the refresh button, volume slider, and mute button in each browser header to control that profile's WebView.
+6. Use the refresh button, screenshot button, profile folder button, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar or the tray button to hide the window to the system tray. Double-click its tray icon or use tray menu `Restore` to show it again.
@@ -87,6 +89,18 @@ The app also stores its settings at:
 ```
 
 Each profile has a stable ID, display name, start URL, timestamps, saved audio state, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
+
+Screenshots are saved automatically under:
+
+```text
+<AppDataPath>\<profile-id>\screenshots
+```
+
+Screenshot files use the profile name and local timestamp:
+
+```text
+<profile-name>-yyyyMMdd-HHmmss.png
+```
 
 ## Project Structure
 

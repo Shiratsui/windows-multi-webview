@@ -142,7 +142,15 @@ Initialization flow:
 5. Each profile gets its own WebView2 environment and user data folder.
 6. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, mute button, volume value, and volume slider.
+
+Per-tile screenshots use WebView2 `CoreWebView2.CapturePreviewAsync(...)` with PNG output. The screenshot button captures the currently visible WebView viewport and saves it with a sanitized profile-name-and-timestamp filename under:
+
+```text
+<AppDataPath>\<profile-id>\screenshots
+```
+
+After a successful capture, `ShowTemporaryStatus(...)` displays a short-lived status popup anchored to the WebView tile. Clicking the popup opens the profile's screenshots folder. Capture failures are intentionally swallowed and do not show an error dialog.
 
 Multi-view tray behavior:
 
