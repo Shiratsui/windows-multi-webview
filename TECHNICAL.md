@@ -131,6 +131,7 @@ Per-tile state:
 
 - `volumeByWebView`: current volume value for each WebView.
 - `mutedByWebView`: current mute state for each WebView.
+- `statsByWebView`: current stats overlay options and CPU sampling state for each WebView.
 - The profile object supplies the display name and start URL.
 
 Initialization flow:
@@ -142,7 +143,31 @@ Initialization flow:
 5. Each profile gets its own WebView2 environment and user data folder.
 6. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
+
+### Stats Overlay
+
+Each WebView tile has a `STAT` button that opens a custom dark `ContextMenuStrip` rendered by `StatsMenuRenderer`. The menu contains checkboxes for:
+
+- `FPS`
+- `CPU`
+- `Memory`
+- `Horizontal`
+
+The menu uses `AutoClose = false` so selecting several stats does not close and reopen the dropdown. `StatsMenuMessageFilter` closes the menu when the user clicks outside the menu or `STAT` button. The WebView surface is a separate child browser HWND, so WebView page clicks are handled by injecting a small script that posts `__multi_webview_close_stats_menu` through `chrome.webview.postMessage(...)`; the host receives that message and calls `CloseStatsMenus()`. `MultiViewForm.Deactivate` also closes open stats menus when the user switches to another application.
+
+The stats overlay itself is injected into the page with `ExecuteScriptAsync(...)`. It creates a fixed-position element with ID `__multi_webview_stats_overlay` and updates it from two sources:
+
+- In-page `requestAnimationFrame` loop for FPS and `LAT`.
+- Host-side timer for CPU and memory samples.
+
+`LAT` is render frame time in milliseconds. It is not network ping or server latency.
+
+CPU and memory are sampled approximately from the WebView2 process tree. The root is `CoreWebView2.BrowserProcessId`; the process tree is found by reusing `WebViewVolumeController.GetProcessTreeIds(...)`. CPU is computed from the delta of summed `Process.TotalProcessorTime` over elapsed wall time and normalized by `Environment.ProcessorCount`. Memory is the summed `WorkingSet64` of the same process tree.
+
+GPU is intentionally not exposed in the stats menu. WebView2 and normal Windows APIs do not provide a reliable per-WebView GPU utilization value, and the Chromium GPU process can be shared or reported inconsistently.
+
+The overlay supports vertical and horizontal layout. In horizontal mode, selected values are joined with `|`. The FPS and frame-time values are stored on `window.__multiWebViewStats...` fields so host-side CPU/memory refreshes do not reset them to placeholder values.
 
 Per-tile screenshots use WebView2 `CoreWebView2.CapturePreviewAsync(...)` with PNG output. The screenshot button captures the currently visible WebView viewport and saves it with a sanitized profile-name-and-timestamp filename under:
 
@@ -242,6 +267,11 @@ The silent audio session is a workaround. It exists only to force early mixer-se
 
 - Custom renderer for profile picker and multi-view tray context menus.
 - Draws the tray menu with a dark background, dark hover state, border, and vertically centered white text.
+
+`StatsMenuRenderer`
+
+- Custom renderer for the per-tile `STAT` dropdown.
+- Draws a dark menu, dark hover state, custom checkbox boxes, green check marks, and vertically centered menu text.
 
 ## Windowing Notes
 
