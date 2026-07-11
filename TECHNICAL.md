@@ -142,7 +142,15 @@ Initialization flow:
 5. Each profile gets its own WebView2 environment and user data folder.
 6. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with minimize, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, mute button, volume value, and volume slider.
+
+Multi-view tray behavior:
+
+- The taskbar minimize button sets `WindowState = FormWindowState.Minimized`.
+- The tray button hides the form, removes it from the taskbar, and shows a per-window tray icon.
+- Double-clicking the tray icon or choosing `Restore` from its tray menu shows the same form again without recreating the WebViews.
+- Choosing `Close` from the tray menu closes the multi-view window and releases its profiles through the existing `FormClosed` tracking in `ProfilePickerForm`.
+- While hidden to tray, `isMinimizedToTray` is included in the mute state passed to `WebViewVolumeController`, so the existing audio enforcement timer keeps all WebViews muted until restore.
 
 ## WebView2 Environment
 
@@ -188,6 +196,7 @@ Timer behavior:
 - Interval: 1000 ms.
 - Before `CoreWebView2` exists, apply calls no-op.
 - After CoreWebView2 exists, the timer reapplies volume/mute/display-name state every second.
+- For multi-view windows hidden to tray, the effective mute state is `isMinimizedToTray || profileMuteState`; this is intentionally runtime-only and does not overwrite the saved profile mute setting.
 - A simple `isApplying` flag prevents overlapping timer work.
 - The timer is stopped and disposed when the WebView control is disposed.
 
@@ -223,7 +232,7 @@ The silent audio session is a workaround. It exists only to force early mixer-se
 
 `DarkTrayMenuRenderer`
 
-- Custom renderer for the profile picker tray context menu.
+- Custom renderer for profile picker and multi-view tray context menus.
 - Draws the tray menu with a dark background, dark hover state, border, and vertically centered white text.
 
 ## Windowing Notes
@@ -243,6 +252,13 @@ Profile picker close behavior:
 - The picker stores the previous `WindowState`, hides directly without setting `WindowState.Minimized`, and restores the previous state from the tray to avoid a visible minimize flash.
 - The close button hover color is reset before hiding and after restore because hiding the form can skip normal mouse-leave handling.
 - `Alt+F4` and tray menu `Exit` close the application.
+
+Multi-view tray behavior:
+
+- The normal minimize button minimizes the multi-view window to the taskbar.
+- The separate tray button hides the multi-view window with `Hide()` and sets `ShowInTaskbar = false`.
+- The multi-view tray icon has `Restore` and `Close` menu items and restores on double-click.
+- Hidden-to-tray multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
 
 Maximize behavior differs slightly:
 
