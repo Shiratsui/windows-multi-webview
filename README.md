@@ -51,6 +51,85 @@ The published files are written to:
 MultiWebView\bin\Release\net10.0-windows\win-x64\publish
 ```
 
+## Installer
+
+The project includes an Inno Setup installer definition at:
+
+```text
+installer\MultiWebView.iss
+```
+
+To build the installer locally, install Inno Setup 6, then run:
+
+```powershell
+.\scripts\build-installer.ps1 -Version 0.1.0 -SelfContained
+```
+
+Outputs are written under:
+
+```text
+artifacts\
+```
+
+The installer is per-user, does not require administrator privileges, creates Start Menu and optional desktop shortcuts, and includes an automatic uninstaller. Uninstalling removes the installed app files and shortcuts, but leaves profile data and settings under `%LOCALAPPDATA%\MultiWebView`.
+
+## GitHub Releases
+
+The release workflow is defined at:
+
+```text
+.github\workflows\release.yml
+```
+
+The workflow runs when a version tag such as `v0.1.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
+
+Before releasing, commit and push the current changes:
+
+```powershell
+git status
+git add .gitignore README.md MultiWebView/MultiWebView.csproj installer scripts .github
+git commit -m "Add Windows installer and GitHub release workflow"
+git push origin main
+```
+
+If the repository uses `master` instead of `main`, push `master`:
+
+```powershell
+git push origin master
+```
+
+Create and push a release tag:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+After pushing the tag:
+
+1. Open the repository on GitHub.
+2. Go to `Actions`.
+3. Open the `Release` workflow run.
+4. Wait for it to complete successfully.
+5. Go to `Releases`.
+6. Download the generated installer and portable zip.
+
+Expected release assets:
+
+```text
+MultiWebViewSetup-0.1.0-win-x64.exe
+MultiWebView-0.1.0-win-x64-portable.zip
+```
+
+For the next release, use a higher version tag:
+
+```powershell
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.1.0`.
+
 ## Usage
 
 1. Start the app.

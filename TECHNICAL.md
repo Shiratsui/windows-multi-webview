@@ -18,6 +18,8 @@ The app also persists and enforces per-profile audio volume and mute state using
 - NuGet package: `Microsoft.Web.WebView2`
 - Persistence: JSON files under the configured profile storage folder
 - Audio control: Windows Core Audio COM interfaces plus WebView2 `CoreWebView2.IsMuted`
+- Installer: Inno Setup 6
+- CI/CD: GitHub Actions on Windows runners
 
 ## Entry Point And Single Instance Flow
 
@@ -320,6 +322,50 @@ dotnet run --project .\MultiWebView\MultiWebView.csproj
 ```
 
 In the current managed sandbox, normal `dotnet build` can fail with access denied while writing generated files under `MultiWebView\obj`. Running the same build with normal local filesystem permissions succeeds.
+
+## Packaging And Releases
+
+The app is packaged as a Windows x64 desktop application.
+
+Installer files:
+
+- `installer/MultiWebView.iss`: Inno Setup definition.
+- `scripts/build-installer.ps1`: local publish and installer build wrapper.
+- `.github/workflows/ci.yml`: normal build validation for pushes and pull requests.
+- `.github/workflows/release.yml`: tag-driven GitHub Release workflow.
+
+The installer workflow publishes the app as self-contained for `win-x64`, so users do not need to install the .NET runtime separately. The app still requires Microsoft Edge WebView2 Runtime because browser hosting depends on WebView2.
+
+The Inno Setup installer is intentionally per-user:
+
+- Install path: `%LOCALAPPDATA%\Programs\Multi WebView`
+- Start Menu shortcut: current user
+- Desktop shortcut: optional, current user
+- Admin rights: not required
+
+The uninstaller removes installed binaries and shortcuts only. It does not remove app data under `%LOCALAPPDATA%\MultiWebView`, because that directory contains profile metadata, WebView2 browser data, cookies, sessions, and screenshots.
+
+Local installer build:
+
+```powershell
+.\scripts\build-installer.ps1 -Version 0.1.0 -SelfContained
+```
+
+The script writes publish and installer outputs under `artifacts\`, which is ignored by Git.
+
+GitHub release flow:
+
+1. Commit and push the source changes.
+2. Push a version tag such as `v0.1.0`.
+3. `.github/workflows/release.yml` runs on `windows-latest`.
+4. The workflow restores, builds, installs Inno Setup with Chocolatey, runs `scripts/build-installer.ps1`, creates a portable zip, and publishes both files to a GitHub Release.
+
+Expected release assets for version `0.1.0`:
+
+```text
+MultiWebViewSetup-0.1.0-win-x64.exe
+MultiWebView-0.1.0-win-x64-portable.zip
+```
 
 ## Current Git Context
 
