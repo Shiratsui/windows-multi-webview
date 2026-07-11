@@ -367,6 +367,30 @@ MultiWebViewSetup-0.1.0-win-x64.exe
 MultiWebView-0.1.0-win-x64-portable.zip
 ```
 
+## Public Repository Notes
+
+The repository is intended to be safe to publish without local profile data. The app stores real user data outside the repo under `%LOCALAPPDATA%\MultiWebView`.
+
+Public-readiness checks performed during installer/release setup:
+
+- Searched the working tree, excluding build outputs and `.git`, for common secret names such as password, token, secret, API key, private key, bearer, authorization, cookie, and session.
+- Checked ignored local files with `git status --short --ignored`.
+- Checked whether ignored personal/demo files were tracked with `git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render.png`.
+- Checked Git history file names for obvious sensitive paths such as `.env`, secret, token, key, cookie, session, settings, `profiles.json`, and `webview2`.
+
+Findings from that pass:
+
+- No obvious tokens, private keys, or credentials were found in tracked source.
+- `MultiWebView/MultiWebView.csproj.user`, `mock/`, and `profile-picker-render.png` are ignored local files and were not reported as tracked by the explicit `git ls-files` check.
+- The regex scan reports expected false positives for normal documentation and source terms such as browser sessions, cancellation tokens, and Core Audio sessions.
+
+Security and privacy expectations:
+
+- WebView2 profile isolation is profile-level browser data separation, not encryption.
+- Real profile folders, screenshots, cookies, and logs should not be committed or attached to public issues.
+- Unsigned installer releases may trigger Windows SmartScreen warnings until the project has reputation or uses code signing.
+- The release workflow has `contents: write` permission so it can publish GitHub Releases. Keep workflow changes reviewed before merging outside contributions.
+
 ## Current Git Context
 
 At the time this document was added, the audio-session changes were already committed locally as:

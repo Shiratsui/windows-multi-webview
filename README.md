@@ -27,6 +27,18 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 
 The app depends on the `Microsoft.Web.WebView2` NuGet package. Package restore is handled by the .NET SDK.
 
+## License
+
+This project is released under the MIT License. See `LICENSE`.
+
+## Security And Privacy
+
+Multi WebView stores profile metadata, settings, screenshots, and WebView2 browser data locally under `%LOCALAPPDATA%\MultiWebView` by default. Each app profile has its own WebView2 user data folder, so cookies and browser sessions are isolated per profile.
+
+The app does not encrypt local WebView2 profile data. Anyone with access to the Windows user account or profile storage folder may be able to inspect local browser data.
+
+Do not publish real profile folders, cookies, screenshots, or logs that contain private account data. See `SECURITY.md` for reporting and public-sharing guidance.
+
 ## Build and Run
 
 From the repository root:
@@ -129,6 +141,27 @@ git push origin v0.1.1
 ```
 
 You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.1.0`.
+
+## Public Repository Checklist
+
+Before making the repository public:
+
+1. Confirm no secrets are tracked:
+
+```powershell
+rg -n --hidden --glob '!bin/**' --glob '!obj/**' --glob '!artifacts/**' --glob '!.git/**' "(?i)(password|token|secret|api[_-]?key|private[_-]?key|client[_-]?secret|authorization|bearer|BEGIN (RSA|OPENSSH|PRIVATE))" .
+```
+
+2. Confirm ignored local files are not tracked:
+
+```powershell
+git status --short --ignored
+git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render.png
+```
+
+3. Review release workflow permissions before accepting outside contributions. The release workflow uses `contents: write` so it can create GitHub Releases.
+
+4. Expect Windows SmartScreen warnings for unsigned installer builds. Reducing those warnings requires code signing.
 
 ## Usage
 
