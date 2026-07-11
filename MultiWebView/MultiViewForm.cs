@@ -13,16 +13,19 @@ public sealed class MultiViewForm : Form
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly ToolTip toolTip = new();
+    private readonly NotifyIcon trayIcon = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
     private readonly Color btnActive = Color.FromArgb(25, 70, 115);
+    private Button btnMin = null!;
     private Button btnPin = null!;
     private Button btnMax = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private bool isMaximized;
     private bool isPinned;
+    private bool isMinimizedToTray;
 
     [DllImport("user32.dll")]
     private static extern void ReleaseCapture();
@@ -47,6 +50,7 @@ public sealed class MultiViewForm : Form
         Size = new Size(1400, 900);
         SetFormIcon(this);
 
+        ConfigureTrayIcon();
         BuildTitleBar();
         BuildGrid();
 
@@ -55,6 +59,52 @@ public sealed class MultiViewForm : Form
             ToggleMaximize();
             await InitializeWebViewsAsync();
         };
+    }
+
+    private void ConfigureTrayIcon()
+    {
+        trayIcon.Text = $"Multi WebView - {profiles.Count} profiles";
+        trayIcon.Visible = false;
+
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
+        trayIcon.Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
+
+        var menu = new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(6),
+            ShowImageMargin = false,
+            Renderer = new DarkTrayMenuRenderer()
+        };
+
+        var restoreItem = new ToolStripMenuItem("Restore")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 156,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        restoreItem.Click += (_, _) => RestoreFromTray();
+
+        var closeItem = new ToolStripMenuItem("Close")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 156,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        closeItem.Click += (_, _) => Close();
+
+        menu.Items.Add(restoreItem);
+        menu.Items.Add(closeItem);
+        trayIcon.ContextMenuStrip = menu;
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
     private void BuildTitleBar()
@@ -95,7 +145,8 @@ public sealed class MultiViewForm : Form
         AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
 
-        titleBar.Controls.Add(CreateTitleButton("—", () => WindowState = FormWindowState.Minimized));
+        btnMin = CreateTitleButton("—", MinimizeToTray);
+        titleBar.Controls.Add(btnMin);
         btnPin = CreateTitleButton("📌", TogglePin);
         titleBar.Controls.Add(btnPin);
         btnMax = CreateTitleButton("⬜", ToggleMaximize);
@@ -439,11 +490,50 @@ public sealed class MultiViewForm : Form
         btnPin.Text = isPinned ? "📍" : "📌";
     }
 
+    private void MinimizeToTray()
+    {
+        if (isMinimizedToTray)
+        {
+            return;
+        }
+
+        pendingTitleBarDragStart = null;
+        ResetTitleButtonColors();
+        isMinimizedToTray = true;
+        trayIcon.Visible = true;
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void RestoreFromTray()
+    {
+        if (!isMinimizedToTray)
+        {
+            return;
+        }
+
+        isMinimizedToTray = false;
+        ShowInTaskbar = true;
+        Show();
+        ResetTitleButtonColors();
+        trayIcon.Visible = false;
+        Activate();
+        BringToFront();
+    }
+
+    private void ResetTitleButtonColors()
+    {
+        btnMin.BackColor = btnNormal;
+        btnPin.BackColor = isPinned ? btnActive : btnNormal;
+        btnMax.BackColor = btnNormal;
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
             toolTip.Dispose();
+            trayIcon.Dispose();
         }
 
         base.Dispose(disposing);
