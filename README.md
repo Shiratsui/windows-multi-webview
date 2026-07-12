@@ -7,6 +7,8 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Create named profiles with their own persistent WebView2 user data folders.
 - Open newly created profiles in a one-tile multi-view browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
+- Show opened profile names in multi-view window titles and tray tooltips.
+- Use distinct runtime window and tray icons for the profile picker and multi-view browser windows.
 - Show currently open profiles with an `OPEN` badge and click them to restore or focus their existing browser window.
 - Refresh individual WebView tiles from their browser headers.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
@@ -239,6 +241,7 @@ MultiWebView/
   ProfileStore.cs               Profile persistence and storage settings
   WebViewEnvironmentFactory.cs  WebView2 environment options
   WebViewVolumeController.cs    Windows audio session volume control
+  WindowIdentity.cs             Runtime window titles and generated window/tray icons
   VolumeSliderControl.cs        Custom-painted volume slider
   Profile.cs                    Profile model
 ```
@@ -247,7 +250,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray-hide controls. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray-hide controls. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

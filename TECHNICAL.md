@@ -155,6 +155,8 @@ Initialization flow:
 
 The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
 
+`WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
+
 ### Stats Overlay
 
 Each WebView tile has a `STAT` button that opens a custom dark `ContextMenuStrip` rendered by `StatsMenuRenderer`. The menu contains checkboxes for:
@@ -284,6 +286,12 @@ The silent audio session is a workaround. It exists only to force early mixer-se
 
 - Custom renderer for the per-tile `STAT` dropdown.
 - Draws a dark menu, dark hover state, custom checkbox boxes, green check marks, and vertically centered menu text.
+
+`WindowIdentity`
+
+- Builds explanatory multi-view window titles from opened profile names.
+- Generates runtime window and tray icons so the profile picker and multi-view browser windows are distinguishable in taskbar and tray surfaces.
+- The generated runtime icons do not replace the packaged executable, installer, or Start Menu shortcut icon.
 
 ## Windowing Notes
 

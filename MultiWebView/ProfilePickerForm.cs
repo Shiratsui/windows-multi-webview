@@ -50,7 +50,7 @@ public sealed class ProfilePickerForm : Form
         Size = new Size(900, 620);
         BackColor = Color.FromArgb(20, 20, 20);
         Font = new Font("Segoe UI", 10F);
-        SetFormIcon(this);
+        SetPickerIcon(this);
 
         ConfigureTrayIcon();
         BuildLayout();
@@ -70,18 +70,13 @@ public sealed class ProfilePickerForm : Form
         AttachTitleBarDrag(titleBar);
         Controls.Add(titleBar);
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
         var icon = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.StretchImage,
+            Image = Icon!.ToBitmap(),
             Size = new Size(20, 20),
             Location = new Point(8, 8)
         };
-
-        if (File.Exists(iconPath))
-        {
-            icon.Image = Image.FromFile(iconPath);
-        }
 
         AttachTitleBarDrag(icon);
         titleBar.Controls.Add(icon);
@@ -91,8 +86,11 @@ public sealed class ProfilePickerForm : Form
             Text = "Multi WebView",
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(36, 9)
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(36, 0),
+            Size = new Size(Math.Max(120, Width - 164), 36),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
@@ -110,9 +108,7 @@ public sealed class ProfilePickerForm : Form
     {
         trayIcon.Text = "Multi WebView";
         trayIcon.Visible = false;
-
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
-        trayIcon.Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
+        trayIcon.Icon = WindowIdentity.CreatePickerIcon();
 
         var menu = new ContextMenuStrip
         {
@@ -152,13 +148,9 @@ public sealed class ProfilePickerForm : Form
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
-    private static void SetFormIcon(Form form)
+    private static void SetPickerIcon(Form form)
     {
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
-        if (File.Exists(iconPath))
-        {
-            form.Icon = new Icon(iconPath);
-        }
+        form.Icon = WindowIdentity.CreatePickerIcon();
     }
 
     private Button CreateTitleButton(string text, Action onClick, bool isClose = false)
@@ -362,7 +354,7 @@ public sealed class ProfilePickerForm : Form
         {
             var openBadge = new Label
             {
-                Text = "ON",
+                Text = "OPEN",
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 8F, FontStyle.Bold),
                 ForeColor = Color.White,
@@ -926,7 +918,7 @@ public sealed class ProfilePickerForm : Form
             Font = new Font("Segoe UI", 9.5F),
             Padding = new Padding(1)
         };
-        SetFormIcon(dialog);
+        SetPickerIcon(dialog);
 
         var titleBar = new Panel
         {

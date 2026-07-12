@@ -47,14 +47,14 @@ public sealed class MultiViewForm : Form
         this.profiles = profiles;
         this.profileStore = profileStore;
 
-        Text = "Multi WebView";
+        Text = WindowIdentity.BuildMultiViewTitle(profiles);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.None;
         WindowState = FormWindowState.Normal;
         BackColor = Color.FromArgb(20, 20, 20);
         MinimumSize = new Size(1000, 650);
         Size = new Size(1400, 900);
-        SetFormIcon(this);
+        SetMultiViewIcon(this, profiles);
 
         ConfigureTrayIcon();
         BuildTitleBar();
@@ -70,11 +70,9 @@ public sealed class MultiViewForm : Form
 
     private void ConfigureTrayIcon()
     {
-        trayIcon.Text = $"Multi WebView - {profiles.Count} profiles";
+        trayIcon.Text = WindowIdentity.BuildTrayText(Text);
         trayIcon.Visible = false;
-
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
-        trayIcon.Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
+        trayIcon.Icon = WindowIdentity.CreateMultiViewIcon(profiles);
 
         var menu = new ContextMenuStrip
         {
@@ -125,30 +123,29 @@ public sealed class MultiViewForm : Form
         AttachTitleBarDrag(titleBar);
         Controls.Add(titleBar);
 
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
         var icon = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.StretchImage,
+            Image = Icon!.ToBitmap(),
             Size = new Size(20, 20),
             Location = new Point(8, 8)
         };
-
-        if (File.Exists(iconPath))
-        {
-            icon.Image = Image.FromFile(iconPath);
-        }
 
         AttachTitleBarDrag(icon);
         titleBar.Controls.Add(icon);
 
         var title = new Label
         {
-            Text = $"Multi WebView - {profiles.Count} profiles",
+            Text = Text,
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            AutoSize = true,
-            Location = new Point(36, 9)
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(36, 0),
+            Size = new Size(Math.Max(180, Width - 240), TitleBarHeight),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
+        toolTip.SetToolTip(title, Text);
         AttachTitleBarDrag(title);
         titleBar.Controls.Add(title);
 
@@ -163,13 +160,9 @@ public sealed class MultiViewForm : Form
         titleBar.Controls.Add(CreateTitleButton("✕", Close, true));
     }
 
-    private static void SetFormIcon(Form form)
+    private static void SetMultiViewIcon(Form form, IReadOnlyList<Profile> profiles)
     {
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
-        if (File.Exists(iconPath))
-        {
-            form.Icon = new Icon(iconPath);
-        }
+        form.Icon = WindowIdentity.CreateMultiViewIcon(profiles);
     }
 
     private Button CreateTitleButton(string text, Action onClick, bool isClose = false)
@@ -850,7 +843,7 @@ public sealed class MultiViewForm : Form
             Opacity = 1
         };
 
-        SetFormIcon(popup);
+        SetMultiViewIcon(popup, profiles);
 
         var content = new TableLayoutPanel
         {
