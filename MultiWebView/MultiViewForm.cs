@@ -1168,6 +1168,25 @@ public sealed class MultiViewForm : Form
         BringToFront();
     }
 
+    public void ActivateFromProfilePicker()
+    {
+        if (isMinimizedToTray)
+        {
+            RestoreFromTray();
+            return;
+        }
+
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        Show();
+        ShowInTaskbar = true;
+        Activate();
+        BringToFront();
+    }
+
     private async Task ApplyTrayMuteStateAsync(bool muted)
     {
         for (var index = 0; index < webViews.Count; index++)

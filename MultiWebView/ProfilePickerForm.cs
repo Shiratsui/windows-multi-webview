@@ -12,6 +12,7 @@ public sealed class ProfilePickerForm : Form
     private readonly HashSet<string> selectedProfileIds = [];
     private readonly HashSet<string> openProfileIds = [];
     private readonly Dictionary<string, Panel> profileCards = [];
+    private readonly Dictionary<string, MultiViewForm> openProfileWindows = [];
     private readonly List<Form> openWindows = [];
     private readonly FlowLayoutPanel profileList = new();
     private readonly TextBox profileNameTextBox = new();
@@ -22,6 +23,10 @@ public sealed class ProfilePickerForm : Form
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
     private readonly Color btnActive = Color.FromArgb(25, 70, 115);
+    private readonly Color profileCardNormal = Color.FromArgb(30, 30, 30);
+    private readonly Color profileCardHover = Color.FromArgb(42, 42, 42);
+    private readonly Color profileCardOpen = Color.FromArgb(28, 48, 40);
+    private readonly Color profileCardSelected = Color.FromArgb(25, 70, 115);
     private Button? btnPin;
     private Button? btnMax;
     private Button? btnClose;
@@ -340,25 +345,43 @@ public sealed class ProfilePickerForm : Form
 
     private Control CreateProfileCard(Profile profile)
     {
+        var isOpen = IsProfileOpen(profile);
         var card = new Panel
         {
             Width = 210,
             Height = 156,
             Margin = new Padding(0, 0, 16, 16),
-            BackColor = Color.FromArgb(30, 30, 30),
-            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand,
+            BackColor = isOpen ? profileCardOpen : profileCardNormal,
+            Cursor = Cursors.Hand,
             Tag = profile
         };
         card.Click += (_, _) => ToggleProfileSelection(profile);
         profileCards[profile.Id] = card;
 
+        if (isOpen)
+        {
+            var openBadge = new Label
+            {
+                Text = "ON",
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(34, 139, 94),
+                Size = new Size(54, 22),
+                Location = new Point(10, 10),
+                Cursor = Cursors.Hand
+            };
+            openBadge.Click += (_, _) => ToggleProfileSelection(profile);
+            card.Controls.Add(openBadge);
+        }
+
         var avatar = new AvatarControl(GetInitials(profile.Name))
         {
             ForeColor = Color.White,
-            BackColor = Color.FromArgb(70, 70, 70),
+            BackColor = isOpen ? Color.FromArgb(42, 112, 84) : Color.FromArgb(70, 70, 70),
             Size = new Size(58, 58),
             Location = new Point(76, 38),
-            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
+            Cursor = Cursors.Hand
         };
         avatar.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(avatar);
@@ -372,21 +395,23 @@ public sealed class ProfilePickerForm : Form
             AutoEllipsis = true,
             Size = new Size(180, 24),
             Location = new Point(15, 100),
-            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
+            Cursor = Cursors.Hand
         };
         name.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(name);
 
         var lastUsed = new Label
         {
-            Text = $"Last used {profile.LastUsedAt.LocalDateTime:g}",
+            Text = isOpen
+                ? $"Open - last used {profile.LastUsedAt.LocalDateTime:g}"
+                : $"Last used {profile.LastUsedAt.LocalDateTime:g}",
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Segoe UI", 8.5F),
-            ForeColor = Color.FromArgb(155, 155, 155),
+            ForeColor = isOpen ? Color.FromArgb(173, 220, 193) : Color.FromArgb(155, 155, 155),
             AutoEllipsis = true,
             Size = new Size(186, 20),
             Location = new Point(12, 126),
-            Cursor = IsProfileOpen(profile) ? Cursors.No : Cursors.Hand
+            Cursor = Cursors.Hand
         };
         lastUsed.Click += (_, _) => ToggleProfileSelection(profile);
         card.Controls.Add(lastUsed);
@@ -433,7 +458,7 @@ public sealed class ProfilePickerForm : Form
         {
             if (!selectedProfileIds.Contains(profile.Id) && !IsProfileOpen(profile))
             {
-                card.BackColor = Color.FromArgb(42, 42, 42);
+                card.BackColor = profileCardHover;
             }
         };
         card.MouseLeave += (_, _) => UpdateProfileCardSelection(profile);
@@ -526,6 +551,7 @@ public sealed class ProfilePickerForm : Form
     {
         if (IsProfileOpen(profile))
         {
+            ActivateOpenProfileWindow(profile);
             return;
         }
 
@@ -547,15 +573,15 @@ public sealed class ProfilePickerForm : Form
 
         if (IsProfileOpen(profile))
         {
-            card.BackColor = Color.FromArgb(38, 38, 38);
-            card.Cursor = Cursors.No;
+            card.BackColor = profileCardOpen;
+            card.Cursor = Cursors.Hand;
             return;
         }
 
         card.Cursor = Cursors.Hand;
         card.BackColor = selectedProfileIds.Contains(profile.Id)
-            ? Color.FromArgb(25, 70, 115)
-            : Color.FromArgb(30, 30, 30);
+            ? profileCardSelected
+            : profileCardNormal;
     }
 
     private void UpdateMultiViewButton()
@@ -622,13 +648,22 @@ public sealed class ProfilePickerForm : Form
         return openProfileIds.Contains(profile.Id);
     }
 
-    private void TrackOpenWindow(Form window, IEnumerable<string> profileIds)
+    private void ActivateOpenProfileWindow(Profile profile)
+    {
+        if (openProfileWindows.TryGetValue(profile.Id, out var window) && !window.IsDisposed)
+        {
+            window.ActivateFromProfilePicker();
+        }
+    }
+
+    private void TrackOpenWindow(MultiViewForm window, IEnumerable<string> profileIds)
     {
         var ids = profileIds.ToList();
         foreach (var id in ids)
         {
             openProfileIds.Add(id);
             selectedProfileIds.Remove(id);
+            openProfileWindows[id] = window;
         }
 
         LoadProfiles();
@@ -641,6 +676,7 @@ public sealed class ProfilePickerForm : Form
             foreach (var id in ids)
             {
                 openProfileIds.Remove(id);
+                openProfileWindows.Remove(id);
             }
 
             window.Dispose();
