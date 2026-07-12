@@ -15,7 +15,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Open an individual profile folder from its WebView tile header.
 - Show an optional per-tile stats overlay for FPS, render latency, CPU, and memory.
 - Control and persist volume and mute state per profile.
-- Edit or delete saved profiles from the profile picker.
+- Edit or delete saved profiles from the profile picker when they are not currently open.
 - Change and open the profile storage folder from the app.
 - Close the profile picker to the system tray and restore it from the tray icon.
 - Move multi-view browser windows to the system tray with a dedicated tray button.
@@ -175,11 +175,11 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
 6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView.
-7. Use the edit and delete buttons on a profile card to manage saved profiles.
+7. Use the edit and delete buttons on a profile card to manage saved profiles. These buttons are disabled while that profile is open.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
 
-Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray.
+Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, or deleted again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
 
 ## Stats Overlay
 

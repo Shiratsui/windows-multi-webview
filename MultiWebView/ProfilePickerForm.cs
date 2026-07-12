@@ -425,14 +425,17 @@ public sealed class ProfilePickerForm : Form
         {
             Text = "✎",
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(45, 45, 45),
-            ForeColor = Color.White,
+            BackColor = isOpen ? Color.FromArgb(35, 35, 35) : Color.FromArgb(45, 45, 45),
+            ForeColor = isOpen ? Color.FromArgb(120, 120, 120) : Color.White,
             Font = new Font("Segoe UI Symbol", 10F, FontStyle.Bold),
             Size = new Size(30, 26),
             Location = new Point(146, 10),
-            Cursor = Cursors.Hand
+            Cursor = isOpen ? Cursors.Default : Cursors.Hand,
+            Enabled = !isOpen
         };
-        editButton.FlatAppearance.BorderColor = Color.FromArgb(75, 75, 75);
+        editButton.FlatAppearance.BorderColor = isOpen
+            ? Color.FromArgb(55, 55, 55)
+            : Color.FromArgb(75, 75, 75);
         editButton.FlatAppearance.BorderSize = 1;
         editButton.Click += (_, _) =>
         {
@@ -444,14 +447,17 @@ public sealed class ProfilePickerForm : Form
         {
             Text = "🗑",
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(75, 35, 35),
-            ForeColor = Color.White,
+            BackColor = isOpen ? Color.FromArgb(35, 35, 35) : Color.FromArgb(75, 35, 35),
+            ForeColor = isOpen ? Color.FromArgb(120, 120, 120) : Color.White,
             Font = new Font("Segoe UI Symbol", 9F, FontStyle.Bold),
             Size = new Size(30, 26),
             Location = new Point(184, 10),
-            Cursor = Cursors.Hand
+            Cursor = isOpen ? Cursors.Default : Cursors.Hand,
+            Enabled = !isOpen
         };
-        deleteButton.FlatAppearance.BorderColor = Color.FromArgb(120, 55, 55);
+        deleteButton.FlatAppearance.BorderColor = isOpen
+            ? Color.FromArgb(55, 55, 55)
+            : Color.FromArgb(120, 55, 55);
         deleteButton.FlatAppearance.BorderSize = 1;
         deleteButton.Click += (_, _) =>
         {
@@ -546,6 +552,11 @@ public sealed class ProfilePickerForm : Form
 
     private void EditProfile(Profile profile)
     {
+        if (IsProfileOpen(profile))
+        {
+            return;
+        }
+
         var editedProfile = PromptForProfile(profile);
         if (editedProfile is null)
         {
@@ -558,13 +569,12 @@ public sealed class ProfilePickerForm : Form
 
     private void DeleteProfile(Profile profile)
     {
-        var result = MessageBox.Show(
-            $"Delete profile \"{profile.Name}\" and its saved browser data?",
-            "Delete profile",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning);
+        if (IsProfileOpen(profile))
+        {
+            return;
+        }
 
-        if (result != DialogResult.Yes)
+        if (!ConfirmDeleteProfile(profile))
         {
             return;
         }
@@ -1093,6 +1103,106 @@ public sealed class ProfilePickerForm : Form
         };
 
         return dialog.ShowDialog() == DialogResult.OK ? result : null;
+    }
+
+    private static bool ConfirmDeleteProfile(Profile profile)
+    {
+        using var dialog = new Form
+        {
+            Text = "Delete profile",
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.None,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ClientSize = new Size(460, 190),
+            BackColor = Color.FromArgb(20, 20, 20),
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(1),
+            KeyPreview = true
+        };
+        SetPickerIcon(dialog);
+
+        var titleBar = new Panel
+        {
+            Height = 36,
+            Dock = DockStyle.Top,
+            BackColor = Color.FromArgb(28, 28, 28)
+        };
+        dialog.Controls.Add(titleBar);
+
+        var titleLabel = new Label
+        {
+            Text = "Delete profile",
+            AutoSize = true,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            Location = new Point(14, 9)
+        };
+        titleBar.Controls.Add(titleLabel);
+
+        var closeButton = new Button
+        {
+            Text = "✕",
+            Dock = DockStyle.Right,
+            Size = new Size(40, 36),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White
+        };
+        closeButton.FlatAppearance.BorderSize = 0;
+        closeButton.Click += (_, _) => dialog.DialogResult = DialogResult.Cancel;
+        closeButton.MouseEnter += (_, _) => closeButton.BackColor = Color.FromArgb(232, 17, 35);
+        closeButton.MouseLeave += (_, _) => closeButton.BackColor = Color.FromArgb(28, 28, 28);
+        titleBar.Controls.Add(closeButton);
+
+        var message = new Label
+        {
+            Text = $"Delete profile \"{profile.Name}\" and its saved browser data?",
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10F),
+            Location = new Point(24, 60),
+            Size = new Size(412, 44)
+        };
+        dialog.Controls.Add(message);
+
+        var detail = new Label
+        {
+            Text = "This cannot be undone.",
+            ForeColor = Color.FromArgb(180, 180, 180),
+            Font = new Font("Segoe UI", 9F),
+            Location = new Point(24, 108),
+            Size = new Size(412, 22)
+        };
+        dialog.Controls.Add(detail);
+
+        var deleteButton = new ActionButtonControl("Delete", () => dialog.DialogResult = DialogResult.OK)
+        {
+            Location = new Point(272, 142),
+            Size = new Size(78, 32),
+            Dock = DockStyle.None
+        };
+        dialog.Controls.Add(deleteButton);
+
+        var cancelButton = new ActionButtonControl("Cancel", () => dialog.DialogResult = DialogResult.Cancel)
+        {
+            Location = new Point(358, 142),
+            Size = new Size(78, 32),
+            Dock = DockStyle.None
+        };
+        dialog.Controls.Add(cancelButton);
+
+        dialog.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                e.SuppressKeyPress = true;
+                dialog.DialogResult = DialogResult.Cancel;
+            }
+        };
+
+        dialog.Shown += (_, _) => cancelButton.Focus();
+
+        return dialog.ShowDialog() == DialogResult.OK;
     }
 
     private static TextBox CreateDialogTextBox(string text, Point location, Size size)

@@ -109,7 +109,7 @@ WebView2 user data folder:
 Responsibilities:
 
 - Load saved profiles.
-- Create, edit, and delete profiles.
+- Create, edit, and delete profiles. Edit and delete actions are disabled for currently open profiles.
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
@@ -124,13 +124,19 @@ Open profile tracking:
 - `openProfileWindows` maps each open profile ID to the owning `MultiViewForm`.
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
-- Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards call `ActivateOpenProfileWindow(...)`, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
+- Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards disable their edit and delete buttons and call `ActivateOpenProfileWindow(...)` when clicked, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
 
 Selection:
 
 - Clicking a profile card toggles its ID in `selectedProfileIds`.
 - Clicking an already-open profile card does not toggle selection; it activates the existing browser window instead.
 - The "Create multi-view" button appears only when at least one unopened profile is selected.
+
+Profile management dialogs:
+
+- Profile editing uses a custom borderless dark dialog owned by `ProfilePickerForm`.
+- Profile deletion uses a matching custom confirmation dialog instead of the default Windows message box.
+- `EditProfile(...)` and `DeleteProfile(...)` defensively return without changes if the profile is currently open.
 
 ## Multi-View Window
 
