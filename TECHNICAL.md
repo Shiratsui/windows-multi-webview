@@ -299,7 +299,8 @@ Pinning sets `TopMost`.
 Profile picker close behavior:
 
 - The custom close button hides the picker to the system tray.
-- The picker stores the previous `WindowState`, hides directly without setting `WindowState.Minimized`, and restores the previous state from the tray to avoid a visible minimize flash.
+- The picker stores the previous `WindowState`, hides directly with `Hide()` without setting `WindowState.Minimized`, and restores the previous state from the tray.
+- The picker does not toggle `ShowInTaskbar` during tray hide. A hidden form is already removed from the taskbar, and avoiding that taskbar-style transition prevents maximized borderless picker windows from briefly flashing back onscreen.
 - The close button hover color is reset before hiding and after restore because hiding the form can skip normal mouse-leave handling.
 - `Alt+F4` and tray menu `Exit` close the application.
 
