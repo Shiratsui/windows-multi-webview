@@ -107,6 +107,7 @@ Responsibilities:
 - Create, edit, and delete profiles.
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
+- Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
 - Open newly created profiles in one-tile `MultiViewForm` windows.
 - Open selected profiles together in tiled `MultiViewForm` windows.
 - Hide to tray from the custom close button and restore from tray.
@@ -115,12 +116,15 @@ Responsibilities:
 Open profile tracking:
 
 - `openProfileIds` prevents duplicate browser sessions for the same profile.
-- `TrackOpenWindow()` adds profile IDs when a window opens.
+- `openProfileWindows` maps each open profile ID to the owning `MultiViewForm`.
+- `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
+- Open profile cards are rendered with an `OPEN` badge and call `ActivateOpenProfileWindow(...)` when clicked. That method uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
 
 Selection:
 
 - Clicking a profile card toggles its ID in `selectedProfileIds`.
+- Clicking an already-open profile card does not toggle selection; it activates the existing browser window instead.
 - The "Create multi-view" button appears only when at least one unopened profile is selected.
 
 ## Multi-View Window

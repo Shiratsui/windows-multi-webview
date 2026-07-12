@@ -7,6 +7,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Create named profiles with their own persistent WebView2 user data folders.
 - Open newly created profiles in a one-tile multi-view browser window.
 - Select multiple profiles and open them together in a tiled multi-view window.
+- Show currently open profiles with an `OPEN` badge and click them to restore or focus their existing browser window.
 - Refresh individual WebView tiles from their browser headers.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
@@ -175,7 +176,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar or the tray button to hide the window to the system tray. Double-click its tray icon or use tray menu `Restore` to show it again.
 
-Profiles that are already open cannot be selected again until their browser window is closed.
+Profiles that are already open show an `OPEN` badge and cannot be selected again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or hidden to the system tray.
 
 ## Stats Overlay
 
