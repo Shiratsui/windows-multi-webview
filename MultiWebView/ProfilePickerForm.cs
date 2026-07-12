@@ -785,18 +785,24 @@ public sealed class ProfilePickerForm : Form
     {
         if (isMinimizedToTray)
         {
+            if (Visible)
+            {
+                ForceHideToTray();
+            }
+
             return;
         }
 
         pendingTitleBarDragStart = null;
         ResetTitleButtonColors();
+        ActiveControl = null;
+        Capture = false;
         windowStateBeforeTray = WindowState == FormWindowState.Minimized
             ? FormWindowState.Normal
             : WindowState;
         isMinimizedToTray = true;
         trayIcon.Visible = true;
-        Hide();
-        ShowInTaskbar = false;
+        ForceHideToTray();
     }
 
     private void ExitApplication()
@@ -812,7 +818,6 @@ public sealed class ProfilePickerForm : Form
         }
 
         isMinimizedToTray = false;
-        ShowInTaskbar = true;
         Show();
         WindowState = windowStateBeforeTray == FormWindowState.Minimized
             ? FormWindowState.Normal
@@ -821,6 +826,11 @@ public sealed class ProfilePickerForm : Form
         trayIcon.Visible = false;
         Activate();
         BringToFront();
+    }
+
+    private void ForceHideToTray()
+    {
+        Hide();
     }
 
     public void ActivateFromExternalLaunch()
@@ -857,6 +867,16 @@ public sealed class ProfilePickerForm : Form
         if (btnClose is not null)
         {
             btnClose.BackColor = btnNormal;
+        }
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+
+        if (isMinimizedToTray && Visible)
+        {
+            ForceHideToTray();
         }
     }
 
