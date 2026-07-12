@@ -17,6 +17,7 @@ public sealed class MultiViewForm : Form
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly Dictionary<WebView2, StatsOverlayState> statsByWebView = [];
     private readonly List<ContextMenuStrip> statsMenus = [];
+    private readonly ContextMenuStrip trayModeMenu;
     private readonly ToolTip toolTip = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
@@ -27,11 +28,21 @@ public sealed class MultiViewForm : Form
     private Button btnTray = null!;
     private Button btnPin = null!;
     private Button btnMax = null!;
+    private ToolStripMenuItem traySwitchModeItem = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
+    private Rectangle? boundsBeforeTray;
+    private double opacityBeforeTray = 1;
+    private bool isKeepRunningInTray;
     private bool isMaximized;
     private bool isPinned;
     private bool isMinimizedToTray;
+
+    public event EventHandler? TrayStateChanged;
+
+    public bool IsInTray => isMinimizedToTray;
+
+    public bool IsKeepRunningInTray => isMinimizedToTray && isKeepRunningInTray;
 
     [DllImport("user32.dll")]
     private static extern void ReleaseCapture();
@@ -56,13 +67,14 @@ public sealed class MultiViewForm : Form
         Size = new Size(1400, 900);
         SetMultiViewIcon(this, profiles);
 
+        trayModeMenu = CreateTrayModeMenu();
         ConfigureTrayIcon();
         BuildTitleBar();
         BuildGrid();
 
+        Load += (_, _) => MaximizeBeforeFirstShow();
         Shown += async (_, _) =>
         {
-            ToggleMaximize();
             await InitializeWebViewsAsync();
         };
         Deactivate += (_, _) => CloseStatsMenus();
@@ -81,7 +93,7 @@ public sealed class MultiViewForm : Form
             Font = new Font("Segoe UI", 9.5F),
             Padding = new Padding(6),
             ShowImageMargin = false,
-            Renderer = new DarkTrayMenuRenderer()
+            Renderer = new StatsMenuRenderer()
         };
 
         var restoreItem = new ToolStripMenuItem("Restore")
@@ -95,6 +107,17 @@ public sealed class MultiViewForm : Form
         };
         restoreItem.Click += (_, _) => RestoreFromTray();
 
+        traySwitchModeItem = new ToolStripMenuItem("Keep Running")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 190,
+            Padding = Padding.Empty,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        traySwitchModeItem.Click += (_, _) => SwitchTrayModeFromTray();
+
         var closeItem = new ToolStripMenuItem("Close")
         {
             AutoSize = false,
@@ -106,9 +129,11 @@ public sealed class MultiViewForm : Form
         };
         closeItem.Click += (_, _) => Close();
 
+        menu.Items.Add(traySwitchModeItem);
         menu.Items.Add(restoreItem);
         menu.Items.Add(closeItem);
         trayIcon.ContextMenuStrip = menu;
+        trayIcon.ContextMenuStrip.Opening += (_, _) => UpdateTrayKeepRunningItemCheck();
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
@@ -151,7 +176,8 @@ public sealed class MultiViewForm : Form
 
         btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
-        btnTray = CreateTitleButton("▾", MinimizeToTray);
+        btnTray = CreateTitleButton("▾", ShowTrayModeMenu);
+        toolTip.SetToolTip(btnTray, "Send to tray");
         titleBar.Controls.Add(btnTray);
         btnPin = CreateTitleButton("📌", TogglePin);
         titleBar.Controls.Add(btnPin);
@@ -1112,6 +1138,19 @@ public sealed class MultiViewForm : Form
         }
     }
 
+    private void MaximizeBeforeFirstShow()
+    {
+        if (isMaximized)
+        {
+            return;
+        }
+
+        previousBounds = Bounds;
+        Bounds = Screen.FromHandle(Handle).WorkingArea;
+        isMaximized = true;
+        UpdateMaxButtonIcon();
+    }
+
     private void UpdateMaxButtonIcon()
     {
         if (btnMax is not null)
@@ -1128,7 +1167,62 @@ public sealed class MultiViewForm : Form
         btnPin.Text = isPinned ? "📍" : "📌";
     }
 
-    private void MinimizeToTray()
+    private void ShowTrayModeMenu()
+    {
+        trayModeMenu.Items.Clear();
+
+        var keepRunningItem = CreateTrayModeMenuItem(
+            "Keep running",
+            "Keep games active offscreen",
+            true);
+        var defaultItem = CreateTrayModeMenuItem(
+            "Default",
+            "Hide window to save resources",
+            false);
+
+        trayModeMenu.Items.Add(defaultItem);
+        trayModeMenu.Items.Add(keepRunningItem);
+
+        var menuWidth = trayModeMenu.GetPreferredSize(Size.Empty).Width;
+        trayModeMenu.Show(btnTray, new Point(btnTray.Width - menuWidth, btnTray.Height));
+    }
+
+    private static ContextMenuStrip CreateTrayModeMenu()
+    {
+        return new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(6),
+            ShowImageMargin = false,
+            Renderer = new StatsMenuRenderer()
+        };
+    }
+
+    private ToolStripMenuItem CreateTrayModeMenuItem(string text, string tooltip, bool keepRunning)
+    {
+        var item = new ToolStripMenuItem(text)
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 190,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft,
+            ToolTipText = tooltip
+        };
+        item.Click += (_, _) =>
+        {
+            profileStore.SetKeepWebViewsRunningInTray(keepRunning);
+            trayModeMenu.Close();
+            MinimizeToTray(keepRunning);
+        };
+
+        return item;
+    }
+
+    private void MinimizeToTray(bool keepRunning)
     {
         if (isMinimizedToTray)
         {
@@ -1138,10 +1232,81 @@ public sealed class MultiViewForm : Form
         pendingTitleBarDragStart = null;
         ResetTitleButtonColors();
         isMinimizedToTray = true;
+        isKeepRunningInTray = keepRunning;
         trayIcon.Visible = true;
+        UpdateTrayKeepRunningItemCheck();
         _ = ApplyTrayMuteStateAsync(true);
+        if (keepRunning)
+        {
+            opacityBeforeTray = Opacity;
+            Opacity = 0;
+            MoveOffscreenForTray();
+            ShowInTaskbar = false;
+            Opacity = opacityBeforeTray;
+            TrayStateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         Hide();
         ShowInTaskbar = false;
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SwitchTrayModeFromTray()
+    {
+        if (!isMinimizedToTray)
+        {
+            return;
+        }
+
+        var keepRunning = !isKeepRunningInTray;
+        profileStore.SetKeepWebViewsRunningInTray(keepRunning);
+
+        if (keepRunning)
+        {
+            SwitchToKeepRunningTrayMode();
+        }
+        else
+        {
+            SwitchToDefaultTrayMode();
+        }
+
+        UpdateTrayKeepRunningItemCheck();
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SwitchToKeepRunningTrayMode()
+    {
+        if (boundsBeforeTray is null)
+        {
+            boundsBeforeTray = Bounds;
+        }
+
+        isKeepRunningInTray = true;
+        opacityBeforeTray = Opacity;
+        Opacity = 0;
+        Show();
+        MoveOffscreenForTray(preserveRestoreBounds: true);
+        ShowInTaskbar = false;
+        Opacity = opacityBeforeTray;
+    }
+
+    private void SwitchToDefaultTrayMode()
+    {
+        isKeepRunningInTray = false;
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void UpdateTrayKeepRunningItemCheck()
+    {
+        if (traySwitchModeItem is null)
+        {
+            return;
+        }
+
+        traySwitchModeItem.Text = "Keep Running";
+        traySwitchModeItem.Tag = isKeepRunningInTray;
     }
 
     private void RestoreFromTray()
@@ -1152,11 +1317,26 @@ public sealed class MultiViewForm : Form
         }
 
         isMinimizedToTray = false;
-        ShowInTaskbar = true;
-        Show();
+        isKeepRunningInTray = false;
+        if (boundsBeforeTray is { } restoreBounds)
+        {
+            Opacity = 0;
+            Show();
+            Bounds = restoreBounds;
+            boundsBeforeTray = null;
+            ShowInTaskbar = true;
+            Opacity = opacityBeforeTray;
+        }
+        else
+        {
+            ShowInTaskbar = true;
+            Show();
+        }
+
         _ = ApplyTrayMuteStateAsync(false);
         ResetTitleButtonColors();
         trayIcon.Visible = false;
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
         Activate();
         BringToFront();
     }
@@ -1178,6 +1358,21 @@ public sealed class MultiViewForm : Form
         ShowInTaskbar = true;
         Activate();
         BringToFront();
+    }
+
+    private void MoveOffscreenForTray(bool preserveRestoreBounds = false)
+    {
+        if (!preserveRestoreBounds || boundsBeforeTray is null)
+        {
+            boundsBeforeTray = Bounds;
+        }
+
+        var virtualScreen = SystemInformation.VirtualScreen;
+        Bounds = new Rectangle(
+            virtualScreen.Right + 100,
+            virtualScreen.Bottom + 100,
+            Width,
+            Height);
     }
 
     private async Task ApplyTrayMuteStateAsync(bool muted)
@@ -1255,6 +1450,7 @@ public sealed class MultiViewForm : Form
             }
 
             toolTip.Dispose();
+            trayModeMenu.Dispose();
             trayIcon.Dispose();
         }
 
@@ -1319,29 +1515,45 @@ public sealed class MultiViewForm : Form
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            var checkBounds = new Rectangle(10, Math.Max(0, (e.Item.Height - 16) / 2), 16, 16);
-            using var boxBrush = new SolidBrush(Color.FromArgb(18, 18, 18));
-            using var boxBorderPen = new Pen(Color.FromArgb(95, 95, 95));
-            e.Graphics.FillRectangle(boxBrush, checkBounds);
-            e.Graphics.DrawRectangle(boxBorderPen, checkBounds);
-
-            if (e.Item.Tag is true)
+            if (e.Item.Tag is bool isChecked)
             {
-                using var checkPen = new Pen(Color.FromArgb(57, 255, 90), 2.4F)
+                var checkBounds = new Rectangle(10, Math.Max(0, (e.Item.Height - 16) / 2), 16, 16);
+                using var boxBrush = new SolidBrush(Color.FromArgb(18, 18, 18));
+                using var boxBorderPen = new Pen(Color.FromArgb(95, 95, 95));
+                e.Graphics.FillRectangle(boxBrush, checkBounds);
+                e.Graphics.DrawRectangle(boxBorderPen, checkBounds);
+
+                if (isChecked)
                 {
-                    StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                    EndCap = System.Drawing.Drawing2D.LineCap.Round
-                };
-                e.Graphics.DrawLines(
-                    checkPen,
-                    [
-                        new Point(checkBounds.Left + 3, checkBounds.Top + 8),
-                        new Point(checkBounds.Left + 7, checkBounds.Top + 12),
-                        new Point(checkBounds.Left + 13, checkBounds.Top + 4)
-                    ]);
+                    using var checkPen = new Pen(Color.FromArgb(57, 255, 90), 2.4F)
+                    {
+                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                        EndCap = System.Drawing.Drawing2D.LineCap.Round
+                    };
+                    e.Graphics.DrawLines(
+                        checkPen,
+                        [
+                            new Point(checkBounds.Left + 3, checkBounds.Top + 8),
+                            new Point(checkBounds.Left + 7, checkBounds.Top + 12),
+                            new Point(checkBounds.Left + 13, checkBounds.Top + 4)
+                        ]);
+                }
+
+                var checkedTextBounds = new Rectangle(38, 0, Math.Max(0, e.Item.Width - 46), e.Item.Height);
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    e.Text,
+                    e.TextFont,
+                    checkedTextBounds,
+                    TextColor,
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.Left |
+                    TextFormatFlags.SingleLine |
+                    TextFormatFlags.NoPadding);
+                return;
             }
 
-            var textBounds = new Rectangle(38, 0, Math.Max(0, e.Item.Width - 46), e.Item.Height);
+            var textBounds = new Rectangle(10, 0, Math.Max(0, e.Item.Width - 18), e.Item.Height);
             TextRenderer.DrawText(
                 e.Graphics,
                 e.Text,

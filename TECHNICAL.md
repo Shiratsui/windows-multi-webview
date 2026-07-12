@@ -75,6 +75,11 @@ Settings file:
 %LOCALAPPDATA%\MultiWebView\settings.json
 ```
 
+Settings fields:
+
+- `ProfilesPath`: active profile storage root.
+- `KeepWebViewsRunningInTray`: last selected multi-view tray mode. The title-bar tray dropdown order is fixed as `Default`, then `Keep running`.
+
 Main profile index:
 
 ```text
@@ -119,7 +124,7 @@ Open profile tracking:
 - `openProfileWindows` maps each open profile ID to the owning `MultiViewForm`.
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
-- Open profile cards are rendered with an `OPEN` badge and call `ActivateOpenProfileWindow(...)` when clicked. That method uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
+- Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards call `ActivateOpenProfileWindow(...)`, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
 
 Selection:
 
@@ -149,11 +154,12 @@ Initialization flow:
 1. Constructor builds the title bar and grid.
 2. Each tile creates a `WebView2`.
 3. `WebViewVolumeController.Attach(...)` starts audio enforcement immediately for each WebView control.
-4. `Shown` maximizes the window and calls `InitializeWebViewsAsync()`.
-5. Each profile gets its own WebView2 environment and user data folder.
-6. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
+4. `Load` maximizes the window before first visible paint to avoid a startup resize flash.
+5. `Shown` calls `InitializeWebViewsAsync()`.
+6. Each profile gets its own WebView2 environment and user data folder.
+7. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with taskbar minimize, tray hide, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
 
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
 
@@ -194,10 +200,11 @@ After a successful capture, `ShowTemporaryStatus(...)` displays a short-lived st
 Multi-view tray behavior:
 
 - The taskbar minimize button sets `WindowState = FormWindowState.Minimized`.
-- The tray button hides the form, removes it from the taskbar, and shows a per-window tray icon.
+- The tray button opens a per-window dropdown with `Default` and `Keep running`. `Default` hides the form normally. `Keep running` removes the form from the taskbar and moves it outside the virtual desktop.
+- The multi-view tray icon context menu includes a checked `Keep Running` item, which toggles between keep-running offscreen mode and default hidden mode without restoring the window.
 - Double-clicking the tray icon or choosing `Restore` from its tray menu shows the same form again without recreating the WebViews.
 - Choosing `Close` from the tray menu closes the multi-view window and releases its profiles through the existing `FormClosed` tracking in `ProfilePickerForm`.
-- While hidden to tray, `isMinimizedToTray` is included in the mute state passed to `WebViewVolumeController`, so the existing audio enforcement timer keeps all WebViews muted until restore.
+- While in the tray, `isMinimizedToTray` is included in the mute state passed to `WebViewVolumeController`, so the existing audio enforcement timer keeps all WebViews muted until restore.
 
 ## WebView2 Environment
 
@@ -315,14 +322,14 @@ Profile picker close behavior:
 Multi-view tray behavior:
 
 - The normal minimize button minimizes the multi-view window to the taskbar.
-- The separate tray button hides the multi-view window with `Hide()` and sets `ShowInTaskbar = false`.
-- The multi-view tray icon has `Restore` and `Close` menu items and restores on double-click.
-- Hidden-to-tray multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
+- The separate tray button opens a dropdown with two modes in a fixed order: `Default`, then `Keep running`. `Keep running` sets `ShowInTaskbar = false` and moves the multi-view window outside the virtual desktop instead of calling `Hide()`. Keeping the native host window visible avoids pushing WebView2 into the fully hidden-window path, which can throttle page timers or rendering. `Default` calls `Hide()` after removing the window from normal interaction, which saves resources but may slow games and animation-heavy pages. The last selected mode is persisted as `KeepWebViewsRunningInTray`.
+- The multi-view tray icon has a checked `Keep Running` toggle, `Restore`, and `Close` menu items and restores on double-click. Switching from `Default` to `Keep running` shows the hidden form invisibly, moves it offscreen, removes it from the taskbar, and refreshes picker chips through `TrayStateChanged`. Switching back to `Default` hides the form again.
+- Tray-mode multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
 
-Maximize behavior differs slightly:
+Maximize behavior:
 
-- `ProfilePickerForm` uses `WindowState`.
-- `MultiViewForm` manually stores previous bounds and sets bounds to `Screen.WorkingArea`.
+- `ProfilePickerForm` and `MultiViewForm` manually store previous bounds and set bounds to `Screen.WorkingArea`, so borderless maximized windows respect the taskbar instead of covering it.
+- `MultiViewForm` performs its initial maximize during `Load`, before the form is first shown, so profile opening does not briefly display the normal startup size before expanding.
 
 ## Build And Run
 
@@ -403,22 +410,6 @@ Security and privacy expectations:
 - Real profile folders, screenshots, cookies, and logs should not be committed or attached to public issues.
 - Unsigned installer releases may trigger Windows SmartScreen warnings until the project has reputation or uses code signing.
 - The release workflow has `contents: write` permission so it can publish GitHub Releases. Keep workflow changes reviewed before merging outside contributions.
-
-## Current Git Context
-
-At the time this document was added, the audio-session changes were already committed locally as:
-
-```text
-3d8d69e Improve WebView audio session handling
-```
-
-The push to `origin/main` failed because GitHub rejected SSH authentication:
-
-```text
-git@github.com: Permission denied (publickey).
-```
-
-The local `main` branch was ahead of `origin/main` by that commit.
 
 ## Development Guidance
 
