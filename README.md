@@ -177,7 +177,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
-9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
+9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for hidden and suspended tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
 
 Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray.
 
@@ -218,7 +218,7 @@ The app also stores its settings at:
 %LOCALAPPDATA%\MultiWebView\settings.json
 ```
 
-The last selected multi-view tray mode is saved in this settings file as `KeepWebViewsRunningInTray`. `Keep running` keeps tray windows alive offscreen instead of hiding them, which helps games and animation-heavy pages avoid hidden-window throttling. `Default` uses normal hidden behavior to reduce CPU, GPU, and memory use.
+The last selected multi-view tray mode is saved in this settings file as `KeepWebViewsRunningInTray`. `Keep running` keeps tray windows alive offscreen instead of hiding them, which helps games and animation-heavy pages avoid hidden-window throttling. `Default` hides and suspends the WebViews to reduce CPU, GPU, and memory use.
 
 Each profile has a stable ID, display name, start URL, timestamps, saved audio state, saved stats overlay options, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
 
@@ -253,7 +253,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides and suspends WebViews, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.
