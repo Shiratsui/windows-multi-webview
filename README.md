@@ -35,6 +35,10 @@ The app depends on the `Microsoft.Web.WebView2` NuGet package. Package restore i
 
 This project is released under the MIT License. See `LICENSE`.
 
+## Changelog
+
+See `CHANGELOG.md` for version-by-version change notes.
+
 ## Security And Privacy
 
 Multi WebView stores profile metadata, settings, screenshots, and WebView2 browser data locally under `%LOCALAPPDATA%\MultiWebView` by default. Each app profile has its own WebView2 user data folder, so cookies and browser sessions are isolated per profile.
