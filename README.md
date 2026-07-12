@@ -19,7 +19,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Change and open the profile storage folder from the app.
 - Close the profile picker to the system tray and restore it from the tray icon.
 - Move multi-view browser windows to the system tray with a dedicated tray button.
-- Choose `Keep running` or `Default` from each multi-view window's tray dropdown before sending it to the tray.
+- Choose `Default` or `Keep running` from each multi-view window's tray dropdown before sending it to the tray.
 - Keep windows on top with the pin button.
 - Single-instance startup: launching the app again focuses the existing picker.
 
@@ -177,7 +177,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView.
 7. Use the edit and delete buttons on a profile card to manage saved profiles.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
-9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Keep running` for game-friendly offscreen tray mode or `Default` for normal hidden tray mode. Double-click its tray icon or use tray menu `Restore` to show it again.
+9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
 
 Profiles that are already open show an `OPEN` chip and cannot be selected again until their browser window is closed. If the owning browser window is in `Keep running` tray mode, the card also shows an orange `KEEP RUNNING` chip. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray.
 
@@ -253,7 +253,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden, and `Default`, which hides the window normally. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

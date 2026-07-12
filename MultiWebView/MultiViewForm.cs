@@ -28,6 +28,7 @@ public sealed class MultiViewForm : Form
     private Button btnTray = null!;
     private Button btnPin = null!;
     private Button btnMax = null!;
+    private ToolStripMenuItem traySwitchModeItem = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private Rectangle? boundsBeforeTray;
@@ -90,7 +91,7 @@ public sealed class MultiViewForm : Form
             Font = new Font("Segoe UI", 9.5F),
             Padding = new Padding(6),
             ShowImageMargin = false,
-            Renderer = new DarkTrayMenuRenderer()
+            Renderer = new StatsMenuRenderer()
         };
 
         var restoreItem = new ToolStripMenuItem("Restore")
@@ -104,6 +105,17 @@ public sealed class MultiViewForm : Form
         };
         restoreItem.Click += (_, _) => RestoreFromTray();
 
+        traySwitchModeItem = new ToolStripMenuItem("Keep Running")
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 190,
+            Padding = Padding.Empty,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        traySwitchModeItem.Click += (_, _) => SwitchTrayModeFromTray();
+
         var closeItem = new ToolStripMenuItem("Close")
         {
             AutoSize = false,
@@ -115,9 +127,11 @@ public sealed class MultiViewForm : Form
         };
         closeItem.Click += (_, _) => Close();
 
+        menu.Items.Add(traySwitchModeItem);
         menu.Items.Add(restoreItem);
         menu.Items.Add(closeItem);
         trayIcon.ContextMenuStrip = menu;
+        trayIcon.ContextMenuStrip.Opening += (_, _) => UpdateTrayKeepRunningItemCheck();
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
     }
 
@@ -1164,16 +1178,8 @@ public sealed class MultiViewForm : Form
             "Hide window to save resources",
             false);
 
-        if (profileStore.KeepWebViewsRunningInTray)
-        {
-            trayModeMenu.Items.Add(keepRunningItem);
-            trayModeMenu.Items.Add(defaultItem);
-        }
-        else
-        {
-            trayModeMenu.Items.Add(defaultItem);
-            trayModeMenu.Items.Add(keepRunningItem);
-        }
+        trayModeMenu.Items.Add(defaultItem);
+        trayModeMenu.Items.Add(keepRunningItem);
 
         var menuWidth = trayModeMenu.GetPreferredSize(Size.Empty).Width;
         trayModeMenu.Show(btnTray, new Point(btnTray.Width - menuWidth, btnTray.Height));
@@ -1188,7 +1194,7 @@ public sealed class MultiViewForm : Form
             Font = new Font("Segoe UI", 9.5F),
             Padding = new Padding(6),
             ShowImageMargin = false,
-            Renderer = new DarkTrayMenuRenderer()
+            Renderer = new StatsMenuRenderer()
         };
     }
 
@@ -1226,6 +1232,7 @@ public sealed class MultiViewForm : Form
         isMinimizedToTray = true;
         isKeepRunningInTray = keepRunning;
         trayIcon.Visible = true;
+        UpdateTrayKeepRunningItemCheck();
         _ = ApplyTrayMuteStateAsync(true);
         if (keepRunning)
         {
@@ -1241,6 +1248,63 @@ public sealed class MultiViewForm : Form
         Hide();
         ShowInTaskbar = false;
         TrayStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SwitchTrayModeFromTray()
+    {
+        if (!isMinimizedToTray)
+        {
+            return;
+        }
+
+        var keepRunning = !isKeepRunningInTray;
+        profileStore.SetKeepWebViewsRunningInTray(keepRunning);
+
+        if (keepRunning)
+        {
+            SwitchToKeepRunningTrayMode();
+        }
+        else
+        {
+            SwitchToDefaultTrayMode();
+        }
+
+        UpdateTrayKeepRunningItemCheck();
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SwitchToKeepRunningTrayMode()
+    {
+        if (boundsBeforeTray is null)
+        {
+            boundsBeforeTray = Bounds;
+        }
+
+        isKeepRunningInTray = true;
+        opacityBeforeTray = Opacity;
+        Opacity = 0;
+        Show();
+        MoveOffscreenForTray(preserveRestoreBounds: true);
+        ShowInTaskbar = false;
+        Opacity = opacityBeforeTray;
+    }
+
+    private void SwitchToDefaultTrayMode()
+    {
+        isKeepRunningInTray = false;
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void UpdateTrayKeepRunningItemCheck()
+    {
+        if (traySwitchModeItem is null)
+        {
+            return;
+        }
+
+        traySwitchModeItem.Text = "Keep Running";
+        traySwitchModeItem.Tag = isKeepRunningInTray;
     }
 
     private void RestoreFromTray()
@@ -1294,9 +1358,13 @@ public sealed class MultiViewForm : Form
         BringToFront();
     }
 
-    private void MoveOffscreenForTray()
+    private void MoveOffscreenForTray(bool preserveRestoreBounds = false)
     {
-        boundsBeforeTray = Bounds;
+        if (!preserveRestoreBounds || boundsBeforeTray is null)
+        {
+            boundsBeforeTray = Bounds;
+        }
+
         var virtualScreen = SystemInformation.VirtualScreen;
         Bounds = new Rectangle(
             virtualScreen.Right + 100,
@@ -1445,29 +1513,45 @@ public sealed class MultiViewForm : Form
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            var checkBounds = new Rectangle(10, Math.Max(0, (e.Item.Height - 16) / 2), 16, 16);
-            using var boxBrush = new SolidBrush(Color.FromArgb(18, 18, 18));
-            using var boxBorderPen = new Pen(Color.FromArgb(95, 95, 95));
-            e.Graphics.FillRectangle(boxBrush, checkBounds);
-            e.Graphics.DrawRectangle(boxBorderPen, checkBounds);
-
-            if (e.Item.Tag is true)
+            if (e.Item.Tag is bool isChecked)
             {
-                using var checkPen = new Pen(Color.FromArgb(57, 255, 90), 2.4F)
+                var checkBounds = new Rectangle(10, Math.Max(0, (e.Item.Height - 16) / 2), 16, 16);
+                using var boxBrush = new SolidBrush(Color.FromArgb(18, 18, 18));
+                using var boxBorderPen = new Pen(Color.FromArgb(95, 95, 95));
+                e.Graphics.FillRectangle(boxBrush, checkBounds);
+                e.Graphics.DrawRectangle(boxBorderPen, checkBounds);
+
+                if (isChecked)
                 {
-                    StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                    EndCap = System.Drawing.Drawing2D.LineCap.Round
-                };
-                e.Graphics.DrawLines(
-                    checkPen,
-                    [
-                        new Point(checkBounds.Left + 3, checkBounds.Top + 8),
-                        new Point(checkBounds.Left + 7, checkBounds.Top + 12),
-                        new Point(checkBounds.Left + 13, checkBounds.Top + 4)
-                    ]);
+                    using var checkPen = new Pen(Color.FromArgb(57, 255, 90), 2.4F)
+                    {
+                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                        EndCap = System.Drawing.Drawing2D.LineCap.Round
+                    };
+                    e.Graphics.DrawLines(
+                        checkPen,
+                        [
+                            new Point(checkBounds.Left + 3, checkBounds.Top + 8),
+                            new Point(checkBounds.Left + 7, checkBounds.Top + 12),
+                            new Point(checkBounds.Left + 13, checkBounds.Top + 4)
+                        ]);
+                }
+
+                var checkedTextBounds = new Rectangle(38, 0, Math.Max(0, e.Item.Width - 46), e.Item.Height);
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    e.Text,
+                    e.TextFont,
+                    checkedTextBounds,
+                    TextColor,
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.Left |
+                    TextFormatFlags.SingleLine |
+                    TextFormatFlags.NoPadding);
+                return;
             }
 
-            var textBounds = new Rectangle(38, 0, Math.Max(0, e.Item.Width - 46), e.Item.Height);
+            var textBounds = new Rectangle(10, 0, Math.Max(0, e.Item.Width - 18), e.Item.Height);
             TextRenderer.DrawText(
                 e.Graphics,
                 e.Text,

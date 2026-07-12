@@ -78,7 +78,7 @@ Settings file:
 Settings fields:
 
 - `ProfilesPath`: active profile storage root.
-- `KeepWebViewsRunningInTray`: last selected multi-view tray mode. `true` means `Keep running` is shown first in the per-window tray dropdown; `false` means `Default` is shown first.
+- `KeepWebViewsRunningInTray`: last selected multi-view tray mode. The title-bar tray dropdown order is fixed as `Default`, then `Keep running`.
 
 Main profile index:
 
@@ -200,7 +200,8 @@ After a successful capture, `ShowTemporaryStatus(...)` displays a short-lived st
 Multi-view tray behavior:
 
 - The taskbar minimize button sets `WindowState = FormWindowState.Minimized`.
-- The tray button opens a per-window dropdown with `Keep running` and `Default`. `Keep running` removes the form from the taskbar and moves it outside the virtual desktop. `Default` hides the form normally.
+- The tray button opens a per-window dropdown with `Default` and `Keep running`. `Default` hides the form normally. `Keep running` removes the form from the taskbar and moves it outside the virtual desktop.
+- The multi-view tray icon context menu includes a checked `Keep Running` item, which toggles between keep-running offscreen mode and default hidden mode without restoring the window.
 - Double-clicking the tray icon or choosing `Restore` from its tray menu shows the same form again without recreating the WebViews.
 - Choosing `Close` from the tray menu closes the multi-view window and releases its profiles through the existing `FormClosed` tracking in `ProfilePickerForm`.
 - While in the tray, `isMinimizedToTray` is included in the mute state passed to `WebViewVolumeController`, so the existing audio enforcement timer keeps all WebViews muted until restore.
@@ -321,8 +322,8 @@ Profile picker close behavior:
 Multi-view tray behavior:
 
 - The normal minimize button minimizes the multi-view window to the taskbar.
-- The separate tray button opens a dropdown with two modes. `Keep running` sets `ShowInTaskbar = false` and moves the multi-view window outside the virtual desktop instead of calling `Hide()`. Keeping the native host window visible avoids pushing WebView2 into the fully hidden-window path, which can throttle page timers or rendering. `Default` calls `Hide()` after removing the window from normal interaction, which saves resources but may slow games and animation-heavy pages. The last selected mode is persisted as `KeepWebViewsRunningInTray` and controls which menu item is shown first.
-- The multi-view tray icon has `Restore` and `Close` menu items and restores on double-click.
+- The separate tray button opens a dropdown with two modes in a fixed order: `Default`, then `Keep running`. `Keep running` sets `ShowInTaskbar = false` and moves the multi-view window outside the virtual desktop instead of calling `Hide()`. Keeping the native host window visible avoids pushing WebView2 into the fully hidden-window path, which can throttle page timers or rendering. `Default` calls `Hide()` after removing the window from normal interaction, which saves resources but may slow games and animation-heavy pages. The last selected mode is persisted as `KeepWebViewsRunningInTray`.
+- The multi-view tray icon has a checked `Keep Running` toggle, `Restore`, and `Close` menu items and restores on double-click. Switching from `Default` to `Keep running` shows the hidden form invisibly, moves it offscreen, removes it from the taskbar, and refreshes picker chips through `TrayStateChanged`. Switching back to `Default` hides the form again.
 - Tray-mode multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
 
 Maximize behavior differs slightly:
