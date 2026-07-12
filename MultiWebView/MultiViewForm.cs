@@ -37,7 +37,6 @@ public sealed class MultiViewForm : Form
     private bool isMaximized;
     private bool isPinned;
     private bool isMinimizedToTray;
-    private int trayStateVersion;
 
     public event EventHandler? TrayStateChanged;
 
@@ -1234,7 +1233,6 @@ public sealed class MultiViewForm : Form
         ResetTitleButtonColors();
         isMinimizedToTray = true;
         isKeepRunningInTray = keepRunning;
-        var stateVersion = ++trayStateVersion;
         trayIcon.Visible = true;
         UpdateTrayKeepRunningItemCheck();
         _ = ApplyTrayMuteStateAsync(true);
@@ -1249,10 +1247,8 @@ public sealed class MultiViewForm : Form
             return;
         }
 
-        SetWebViewsVisible(false);
         Hide();
         ShowInTaskbar = false;
-        _ = SuspendWebViewsAsync(stateVersion);
         TrayStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1286,12 +1282,9 @@ public sealed class MultiViewForm : Form
             boundsBeforeTray = Bounds;
         }
 
-        SetWebViewsVisible(true);
         isKeepRunningInTray = true;
-        trayStateVersion++;
         opacityBeforeTray = Opacity;
         Opacity = 0;
-        ResumeWebViews();
         Show();
         MoveOffscreenForTray(preserveRestoreBounds: true);
         ShowInTaskbar = false;
@@ -1301,11 +1294,9 @@ public sealed class MultiViewForm : Form
     private void SwitchToDefaultTrayMode()
     {
         isKeepRunningInTray = false;
-        var stateVersion = ++trayStateVersion;
-        SetWebViewsVisible(false);
+        RestoreBoundsBeforeDefaultTrayHide();
         Hide();
         ShowInTaskbar = false;
-        _ = SuspendWebViewsAsync(stateVersion);
     }
 
     private void UpdateTrayKeepRunningItemCheck()
@@ -1328,9 +1319,6 @@ public sealed class MultiViewForm : Form
 
         isMinimizedToTray = false;
         isKeepRunningInTray = false;
-        trayStateVersion++;
-        SetWebViewsVisible(true);
-        ResumeWebViews();
         if (boundsBeforeTray is { } restoreBounds)
         {
             Opacity = 0;
@@ -1388,60 +1376,18 @@ public sealed class MultiViewForm : Form
             Height);
     }
 
-    private async Task SuspendWebViewsAsync(int stateVersion)
+    private void RestoreBoundsBeforeDefaultTrayHide()
     {
-        foreach (var webView in webViews)
+        if (boundsBeforeTray is not { } restoreBounds)
         {
-            if (stateVersion != trayStateVersion ||
-                !isMinimizedToTray ||
-                isKeepRunningInTray ||
-                webView.CoreWebView2 is null)
-            {
-                continue;
-            }
-
-            try
-            {
-                webView.Visible = false;
-                await webView.CoreWebView2.TrySuspendAsync();
-                if (stateVersion != trayStateVersion || !isMinimizedToTray || isKeepRunningInTray)
-                {
-                    ResumeWebViews();
-                    return;
-                }
-            }
-            catch
-            {
-            }
+            return;
         }
-    }
 
-    private void SetWebViewsVisible(bool visible)
-    {
-        foreach (var webView in webViews)
-        {
-            webView.Visible = visible;
-        }
-    }
-
-    private void ResumeWebViews()
-    {
-        foreach (var webView in webViews)
-        {
-            webView.Visible = true;
-            if (webView.CoreWebView2 is null)
-            {
-                continue;
-            }
-
-            try
-            {
-                webView.CoreWebView2.Resume();
-            }
-            catch
-            {
-            }
-        }
+        Opacity = 0;
+        ShowInTaskbar = true;
+        Bounds = restoreBounds;
+        boundsBeforeTray = null;
+        Opacity = opacityBeforeTray;
     }
 
     private async Task ApplyTrayMuteStateAsync(bool muted)
