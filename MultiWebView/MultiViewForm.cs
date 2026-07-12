@@ -40,6 +40,8 @@ public sealed class MultiViewForm : Form
 
     public event EventHandler? TrayStateChanged;
 
+    public bool IsInTray => isMinimizedToTray;
+
     public bool IsKeepRunningInTray => isMinimizedToTray && isKeepRunningInTray;
 
     [DllImport("user32.dll")]

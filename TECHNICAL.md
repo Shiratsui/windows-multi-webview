@@ -124,7 +124,7 @@ Open profile tracking:
 - `openProfileWindows` maps each open profile ID to the owning `MultiViewForm`.
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
-- Open profile cards are rendered with an `OPEN` chip and call `ActivateOpenProfileWindow(...)` when clicked. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows an orange `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. `ActivateOpenProfileWindow(...)` uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
+- Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards call `ActivateOpenProfileWindow(...)`, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
 
 Selection:
 
@@ -326,10 +326,10 @@ Multi-view tray behavior:
 - The multi-view tray icon has a checked `Keep Running` toggle, `Restore`, and `Close` menu items and restores on double-click. Switching from `Default` to `Keep running` shows the hidden form invisibly, moves it offscreen, removes it from the taskbar, and refreshes picker chips through `TrayStateChanged`. Switching back to `Default` hides the form again.
 - Tray-mode multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
 
-Maximize behavior differs slightly:
+Maximize behavior:
 
-- `ProfilePickerForm` uses `WindowState`.
-- `MultiViewForm` manually stores previous bounds and sets bounds to `Screen.WorkingArea`. The initial maximize happens during `Load`, before the form is first shown, so profile opening does not briefly display the normal startup size before expanding.
+- `ProfilePickerForm` and `MultiViewForm` manually store previous bounds and set bounds to `Screen.WorkingArea`, so borderless maximized windows respect the taskbar instead of covering it.
+- `MultiViewForm` performs its initial maximize during `Load`, before the form is first shown, so profile opening does not briefly display the normal startup size before expanding.
 
 ## Build And Run
 

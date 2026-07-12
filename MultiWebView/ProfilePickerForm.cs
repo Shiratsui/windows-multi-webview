@@ -31,8 +31,10 @@ public sealed class ProfilePickerForm : Form
     private Button? btnMax;
     private Button? btnClose;
     private Point? pendingTitleBarDragStart;
+    private Rectangle previousBounds;
     private FormWindowState windowStateBeforeTray = FormWindowState.Normal;
     private bool isPinned;
+    private bool isMaximized;
     private bool isMinimizedToTray;
 
     [DllImport("user32.dll")]
@@ -338,11 +340,12 @@ public sealed class ProfilePickerForm : Form
     private Control CreateProfileCard(Profile profile)
     {
         var isOpen = IsProfileOpen(profile);
+        var isInTray = IsProfileInTray(profile);
         var isKeepRunning = IsProfileKeepRunningInTray(profile);
         var card = new Panel
         {
-            Width = 210,
-            Height = 176,
+            Width = 224,
+            Height = 188,
             Margin = new Padding(0, 0, 16, 16),
             BackColor = isOpen ? profileCardOpen : profileCardNormal,
             Cursor = Cursors.Hand,
@@ -351,38 +354,28 @@ public sealed class ProfilePickerForm : Form
         card.Click += (_, _) => ToggleProfileSelection(profile);
         profileCards[profile.Id] = card;
 
-        if (isOpen)
-        {
-            var openBadge = new Label
-            {
-                Text = "OPEN",
-                TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(34, 139, 94),
-                Size = new Size(54, 22),
-                Location = new Point(10, 10),
-                Cursor = Cursors.Hand
-            };
-            openBadge.Click += (_, _) => ToggleProfileSelection(profile);
-            card.Controls.Add(openBadge);
+        var stateBadge = CreateStatusBadge(
+            isOpen
+                ? isInTray ? "TRAY" : "OPEN"
+                : "OFF",
+            isOpen
+                ? isInTray ? Color.FromArgb(198, 104, 35) : Color.FromArgb(34, 139, 94)
+                : Color.FromArgb(82, 82, 82),
+            isInTray ? 52 : 54,
+            new Point(10, 10),
+            profile);
+        card.Controls.Add(stateBadge);
 
-            if (isKeepRunning)
-            {
-                var keepRunningBadge = new Label
-                {
-                    Text = "KEEP RUNNING",
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
-                    ForeColor = Color.White,
-                    BackColor = Color.FromArgb(198, 104, 35),
-                    Size = new Size(104, 20),
-                    Location = new Point(10, 36),
-                    Cursor = Cursors.Hand
-                };
-                keepRunningBadge.Click += (_, _) => ToggleProfileSelection(profile);
-                card.Controls.Add(keepRunningBadge);
-            }
+        if (isKeepRunning)
+        {
+            var keepRunningBadge = CreateStatusBadge(
+                "KEEP RUNNING",
+                Color.FromArgb(176, 58, 58),
+                104,
+                new Point(10, 36),
+                profile,
+                7.5F);
+            card.Controls.Add(keepRunningBadge);
         }
 
         var avatar = new AvatarControl(GetInitials(profile.Name))
@@ -390,7 +383,7 @@ public sealed class ProfilePickerForm : Form
             ForeColor = Color.White,
             BackColor = isOpen ? Color.FromArgb(42, 112, 84) : Color.FromArgb(70, 70, 70),
             Size = new Size(58, 58),
-            Location = new Point(76, isKeepRunning ? 62 : 48),
+            Location = new Point(83, 68),
             Cursor = Cursors.Hand
         };
         avatar.Click += (_, _) => ToggleProfileSelection(profile);
@@ -404,7 +397,7 @@ public sealed class ProfilePickerForm : Form
             ForeColor = Color.White,
             AutoEllipsis = true,
             Size = new Size(180, 24),
-            Location = new Point(15, isKeepRunning ? 124 : 110),
+            Location = new Point(22, 132),
             Cursor = Cursors.Hand
         };
         name.Click += (_, _) => ToggleProfileSelection(profile);
@@ -413,14 +406,16 @@ public sealed class ProfilePickerForm : Form
         var lastUsed = new Label
         {
             Text = isOpen
-                ? $"Open - last used {profile.LastUsedAt.LocalDateTime:g}"
+                ? isInTray
+                    ? $"Tray - last used {profile.LastUsedAt.LocalDateTime:g}"
+                    : $"Open - last used {profile.LastUsedAt.LocalDateTime:g}"
                 : $"Last used {profile.LastUsedAt.LocalDateTime:g}",
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Segoe UI", 8.5F),
             ForeColor = isOpen ? Color.FromArgb(173, 220, 193) : Color.FromArgb(155, 155, 155),
             AutoEllipsis = true,
-            Size = new Size(186, 20),
-            Location = new Point(12, isKeepRunning ? 150 : 136),
+            Size = new Size(200, 20),
+            Location = new Point(12, 158),
             Cursor = Cursors.Hand
         };
         lastUsed.Click += (_, _) => ToggleProfileSelection(profile);
@@ -434,7 +429,7 @@ public sealed class ProfilePickerForm : Form
             ForeColor = Color.White,
             Font = new Font("Segoe UI Symbol", 10F, FontStyle.Bold),
             Size = new Size(30, 26),
-            Location = new Point(132, 8),
+            Location = new Point(146, 10),
             Cursor = Cursors.Hand
         };
         editButton.FlatAppearance.BorderColor = Color.FromArgb(75, 75, 75);
@@ -453,7 +448,7 @@ public sealed class ProfilePickerForm : Form
             ForeColor = Color.White,
             Font = new Font("Segoe UI Symbol", 9F, FontStyle.Bold),
             Size = new Size(30, 26),
-            Location = new Point(170, 8),
+            Location = new Point(184, 10),
             Cursor = Cursors.Hand
         };
         deleteButton.FlatAppearance.BorderColor = Color.FromArgb(120, 55, 55);
@@ -475,6 +470,29 @@ public sealed class ProfilePickerForm : Form
         UpdateProfileCardSelection(profile);
 
         return card;
+    }
+
+    private Label CreateStatusBadge(
+        string text,
+        Color backColor,
+        int width,
+        Point location,
+        Profile profile,
+        float fontSize = 8F)
+    {
+        var badge = new Label
+        {
+            Text = text,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", fontSize, FontStyle.Bold),
+            ForeColor = Color.White,
+            BackColor = backColor,
+            Size = new Size(width, 22),
+            Location = location,
+            Cursor = Cursors.Hand
+        };
+        badge.Click += (_, _) => ToggleProfileSelection(profile);
+        return badge;
     }
 
     private static Control CreateEmptyState()
@@ -658,6 +676,13 @@ public sealed class ProfilePickerForm : Form
         return openProfileIds.Contains(profile.Id);
     }
 
+    private bool IsProfileInTray(Profile profile)
+    {
+        return openProfileWindows.TryGetValue(profile.Id, out var window) &&
+            !window.IsDisposed &&
+            window.IsInTray;
+    }
+
     private bool IsProfileKeepRunningInTray(Profile profile)
     {
         return openProfileWindows.TryGetValue(profile.Id, out var window) &&
@@ -767,18 +792,17 @@ public sealed class ProfilePickerForm : Form
 
     private void DragForm()
     {
-        if (WindowState == FormWindowState.Maximized)
+        if (isMaximized)
         {
             var mouseScreen = Cursor.Position;
-            var restoreBounds = RestoreBounds;
-            WindowState = FormWindowState.Normal;
-
-            var width = restoreBounds.Width > 0 ? restoreBounds.Width : Width;
-            var height = restoreBounds.Height > 0 ? restoreBounds.Height : Height;
+            var width = previousBounds.Width > 0 ? previousBounds.Width : Width;
+            var height = previousBounds.Height > 0 ? previousBounds.Height : Height;
             var newX = mouseScreen.X - width / 2;
             var newY = mouseScreen.Y - 15;
 
             Bounds = new Rectangle(newX, newY, width, height);
+            isMaximized = false;
+            UpdateMaxButtonIcon();
         }
 
         ReleaseCapture();
@@ -787,9 +811,27 @@ public sealed class ProfilePickerForm : Form
 
     private void ToggleMaximize()
     {
-        WindowState = WindowState == FormWindowState.Maximized
-            ? FormWindowState.Normal
-            : FormWindowState.Maximized;
+        if (isMaximized)
+        {
+            Bounds = previousBounds;
+            isMaximized = false;
+        }
+        else
+        {
+            previousBounds = Bounds;
+            Bounds = Screen.FromHandle(Handle).WorkingArea;
+            isMaximized = true;
+        }
+
+        UpdateMaxButtonIcon();
+    }
+
+    private void UpdateMaxButtonIcon()
+    {
+        if (btnMax is not null)
+        {
+            btnMax.Text = isMaximized ? "❐" : "⬜";
+        }
     }
 
     private void TogglePin()
