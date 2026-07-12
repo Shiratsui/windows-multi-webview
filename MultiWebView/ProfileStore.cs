@@ -24,11 +24,15 @@ public sealed class ProfileStore
 
     public string AppDataPath { get; private set; }
 
+    public bool KeepWebViewsRunningInTray { get; private set; }
+
     public string ProfilesPath => Path.Combine(AppDataPath, "profiles.json");
 
     public ProfileStore()
     {
-        AppDataPath = LoadSettings().ProfilesPath;
+        var settings = LoadSettings();
+        AppDataPath = settings.ProfilesPath;
+        KeepWebViewsRunningInTray = settings.KeepWebViewsRunningInTray;
     }
 
     public IReadOnlyList<Profile> LoadProfiles()
@@ -185,7 +189,21 @@ public sealed class ProfileStore
             SaveProfiles([]);
         }
 
-        SaveSettings(new ProfileStoreSettings { ProfilesPath = AppDataPath });
+        SaveSettings(new ProfileStoreSettings
+        {
+            ProfilesPath = AppDataPath,
+            KeepWebViewsRunningInTray = KeepWebViewsRunningInTray
+        });
+    }
+
+    public void SetKeepWebViewsRunningInTray(bool enabled)
+    {
+        KeepWebViewsRunningInTray = enabled;
+        SaveSettings(new ProfileStoreSettings
+        {
+            ProfilesPath = AppDataPath,
+            KeepWebViewsRunningInTray = enabled
+        });
     }
 
     public static string NormalizeStartUrl(string startUrl)
@@ -281,5 +299,6 @@ public sealed class ProfileStore
     private sealed class ProfileStoreSettings
     {
         public string ProfilesPath { get; set; } = ProfileStore.DefaultProfilesPath;
+        public bool KeepWebViewsRunningInTray { get; set; } = true;
     }
 }

@@ -17,6 +17,7 @@ public sealed class MultiViewForm : Form
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly Dictionary<WebView2, StatsOverlayState> statsByWebView = [];
     private readonly List<ContextMenuStrip> statsMenus = [];
+    private readonly ContextMenuStrip trayModeMenu;
     private readonly ToolTip toolTip = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
@@ -29,9 +30,16 @@ public sealed class MultiViewForm : Form
     private Button btnMax = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
+    private Rectangle? boundsBeforeTray;
+    private double opacityBeforeTray = 1;
+    private bool isKeepRunningInTray;
     private bool isMaximized;
     private bool isPinned;
     private bool isMinimizedToTray;
+
+    public event EventHandler? TrayStateChanged;
+
+    public bool IsKeepRunningInTray => isMinimizedToTray && isKeepRunningInTray;
 
     [DllImport("user32.dll")]
     private static extern void ReleaseCapture();
@@ -56,13 +64,14 @@ public sealed class MultiViewForm : Form
         Size = new Size(1400, 900);
         SetMultiViewIcon(this, profiles);
 
+        trayModeMenu = CreateTrayModeMenu();
         ConfigureTrayIcon();
         BuildTitleBar();
         BuildGrid();
 
+        Load += (_, _) => MaximizeBeforeFirstShow();
         Shown += async (_, _) =>
         {
-            ToggleMaximize();
             await InitializeWebViewsAsync();
         };
         Deactivate += (_, _) => CloseStatsMenus();
@@ -151,7 +160,8 @@ public sealed class MultiViewForm : Form
 
         btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
-        btnTray = CreateTitleButton("▾", MinimizeToTray);
+        btnTray = CreateTitleButton("▾", ShowTrayModeMenu);
+        toolTip.SetToolTip(btnTray, "Send to tray");
         titleBar.Controls.Add(btnTray);
         btnPin = CreateTitleButton("📌", TogglePin);
         titleBar.Controls.Add(btnPin);
@@ -1112,6 +1122,19 @@ public sealed class MultiViewForm : Form
         }
     }
 
+    private void MaximizeBeforeFirstShow()
+    {
+        if (isMaximized)
+        {
+            return;
+        }
+
+        previousBounds = Bounds;
+        Bounds = Screen.FromHandle(Handle).WorkingArea;
+        isMaximized = true;
+        UpdateMaxButtonIcon();
+    }
+
     private void UpdateMaxButtonIcon()
     {
         if (btnMax is not null)
@@ -1128,7 +1151,70 @@ public sealed class MultiViewForm : Form
         btnPin.Text = isPinned ? "📍" : "📌";
     }
 
-    private void MinimizeToTray()
+    private void ShowTrayModeMenu()
+    {
+        trayModeMenu.Items.Clear();
+
+        var keepRunningItem = CreateTrayModeMenuItem(
+            "Keep running",
+            "Keep games active offscreen",
+            true);
+        var defaultItem = CreateTrayModeMenuItem(
+            "Default",
+            "Hide window to save resources",
+            false);
+
+        if (profileStore.KeepWebViewsRunningInTray)
+        {
+            trayModeMenu.Items.Add(keepRunningItem);
+            trayModeMenu.Items.Add(defaultItem);
+        }
+        else
+        {
+            trayModeMenu.Items.Add(defaultItem);
+            trayModeMenu.Items.Add(keepRunningItem);
+        }
+
+        var menuWidth = trayModeMenu.GetPreferredSize(Size.Empty).Width;
+        trayModeMenu.Show(btnTray, new Point(btnTray.Width - menuWidth, btnTray.Height));
+    }
+
+    private static ContextMenuStrip CreateTrayModeMenu()
+    {
+        return new ContextMenuStrip
+        {
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9.5F),
+            Padding = new Padding(6),
+            ShowImageMargin = false,
+            Renderer = new DarkTrayMenuRenderer()
+        };
+    }
+
+    private ToolStripMenuItem CreateTrayModeMenuItem(string text, string tooltip, bool keepRunning)
+    {
+        var item = new ToolStripMenuItem(text)
+        {
+            AutoSize = false,
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            Height = 32,
+            Width = 190,
+            Padding = new Padding(10, 0, 10, 0),
+            TextAlign = ContentAlignment.MiddleLeft,
+            ToolTipText = tooltip
+        };
+        item.Click += (_, _) =>
+        {
+            profileStore.SetKeepWebViewsRunningInTray(keepRunning);
+            trayModeMenu.Close();
+            MinimizeToTray(keepRunning);
+        };
+
+        return item;
+    }
+
+    private void MinimizeToTray(bool keepRunning)
     {
         if (isMinimizedToTray)
         {
@@ -1138,10 +1224,23 @@ public sealed class MultiViewForm : Form
         pendingTitleBarDragStart = null;
         ResetTitleButtonColors();
         isMinimizedToTray = true;
+        isKeepRunningInTray = keepRunning;
         trayIcon.Visible = true;
         _ = ApplyTrayMuteStateAsync(true);
+        if (keepRunning)
+        {
+            opacityBeforeTray = Opacity;
+            Opacity = 0;
+            MoveOffscreenForTray();
+            ShowInTaskbar = false;
+            Opacity = opacityBeforeTray;
+            TrayStateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         Hide();
         ShowInTaskbar = false;
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RestoreFromTray()
@@ -1152,11 +1251,26 @@ public sealed class MultiViewForm : Form
         }
 
         isMinimizedToTray = false;
-        ShowInTaskbar = true;
-        Show();
+        isKeepRunningInTray = false;
+        if (boundsBeforeTray is { } restoreBounds)
+        {
+            Opacity = 0;
+            Show();
+            Bounds = restoreBounds;
+            boundsBeforeTray = null;
+            ShowInTaskbar = true;
+            Opacity = opacityBeforeTray;
+        }
+        else
+        {
+            ShowInTaskbar = true;
+            Show();
+        }
+
         _ = ApplyTrayMuteStateAsync(false);
         ResetTitleButtonColors();
         trayIcon.Visible = false;
+        TrayStateChanged?.Invoke(this, EventArgs.Empty);
         Activate();
         BringToFront();
     }
@@ -1178,6 +1292,17 @@ public sealed class MultiViewForm : Form
         ShowInTaskbar = true;
         Activate();
         BringToFront();
+    }
+
+    private void MoveOffscreenForTray()
+    {
+        boundsBeforeTray = Bounds;
+        var virtualScreen = SystemInformation.VirtualScreen;
+        Bounds = new Rectangle(
+            virtualScreen.Right + 100,
+            virtualScreen.Bottom + 100,
+            Width,
+            Height);
     }
 
     private async Task ApplyTrayMuteStateAsync(bool muted)
@@ -1255,6 +1380,7 @@ public sealed class MultiViewForm : Form
             }
 
             toolTip.Dispose();
+            trayModeMenu.Dispose();
             trayIcon.Dispose();
         }
 
