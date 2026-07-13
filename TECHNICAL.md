@@ -167,6 +167,8 @@ Initialization flow:
 
 The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
 
+The tile refresh button performs a full WebView recreation rather than a page reload. `RecreateWebViewAsync(...)` closes open stats menus, creates a new `WebView2`, replaces the old control in `webViews`, carries over the current volume, mute, and stats state, attaches audio enforcement, removes and disposes the old control and stats timer, then calls `InitializeWebViewAsync(...)` for the new control. Initial startup and refresh use the same initialization path so WebView2 environment creation, early audio-session setup, saved audio application, stats overlay setup, and navigation stay consistent.
+
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
 
 ### Stats Overlay
@@ -374,7 +376,7 @@ The uninstaller removes installed binaries and shortcuts only. It does not remov
 Local installer build:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.1.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.4.0 -SelfContained
 ```
 
 The script writes publish and installer outputs under `artifacts\`, which is ignored by Git.
@@ -382,15 +384,15 @@ The script writes publish and installer outputs under `artifacts\`, which is ign
 GitHub release flow:
 
 1. Commit and push the source changes.
-2. Push a version tag such as `v0.1.0`.
+2. Push a version tag such as `v0.4.0`.
 3. `.github/workflows/release.yml` runs on `windows-latest`.
 4. The workflow restores, builds, installs Inno Setup with Chocolatey, runs `scripts/build-installer.ps1`, creates a portable zip, and publishes both files to a GitHub Release.
 
-Expected release assets for version `0.1.0`:
+Expected release assets for version `0.4.0`:
 
 ```text
-MultiWebViewSetup-0.1.0-win-x64.exe
-MultiWebView-0.1.0-win-x64-portable.zip
+MultiWebViewSetup-0.4.0-win-x64.exe
+MultiWebView-0.4.0-win-x64-portable.zip
 ```
 
 ## Public Repository Notes
@@ -433,3 +435,5 @@ When changing WebView creation, preserve the order:
 6. Navigate.
 
 This order minimizes the window where Windows can create a WebView2 audio session with the wrong default volume.
+
+When changing tile refresh behavior, keep it aligned with `InitializeWebViewAsync(...)` instead of adding a separate initialization path. Refresh should continue to recreate only the selected tile's `WebView2` while preserving the tile's current audio and stats state.

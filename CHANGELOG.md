@@ -2,6 +2,13 @@
 
 Change notes for tagged Multi WebView releases. Entries are based on the Git tag history.
 
+## v0.4.0
+
+- Changed the per-tile refresh button to recreate the selected WebView instead of reloading the current page.
+- Preserved current per-tile volume, mute, and stats overlay state across WebView recreation.
+- Shared WebView initialization between initial tile creation and refresh-triggered recreation.
+- Updated release documentation for the `v0.4.0` release.
+
 ## v0.3.3
 
 - Added a custom delete confirmation dialog for profile deletion.

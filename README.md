@@ -10,7 +10,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Show opened profile names in multi-view window titles and tray tooltips.
 - Use distinct runtime window and tray icons for the profile picker and multi-view browser windows.
 - Show profile state chips: grey `OFF`, green `OPEN`, orange `TRAY`, plus a red `KEEP RUNNING` chip when the owning multi-view window is in keep-running tray mode.
-- Refresh individual WebView tiles from their browser headers.
+- Recreate individual WebView tiles from their browser headers when a full WebView refresh is needed.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
 - Show an optional per-tile stats overlay for FPS, render latency, CPU, and memory.
@@ -82,7 +82,7 @@ installer\MultiWebView.iss
 To build the installer locally, install Inno Setup 6, then run:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.1.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.4.0 -SelfContained
 ```
 
 Outputs are written under:
@@ -101,7 +101,7 @@ The release workflow is defined at:
 .github\workflows\release.yml
 ```
 
-The workflow runs when a version tag such as `v0.1.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
+The workflow runs when a version tag such as `v0.4.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
 
 Before releasing, review the working tree, stage the intended source and documentation changes, then commit and push:
 
@@ -121,8 +121,8 @@ git push origin master
 Create and push a release tag:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 After pushing the tag:
@@ -137,18 +137,18 @@ After pushing the tag:
 Expected release assets:
 
 ```text
-MultiWebViewSetup-0.1.0-win-x64.exe
-MultiWebView-0.1.0-win-x64-portable.zip
+MultiWebViewSetup-0.4.0-win-x64.exe
+MultiWebView-0.4.0-win-x64-portable.zip
 ```
 
 For the next release, use a higher version tag:
 
 ```powershell
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.4.1
+git push origin v0.4.1
 ```
 
-You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.1.0`.
+You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.4.0`.
 
 ## Public Repository Checklist
 
@@ -178,7 +178,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView.
+6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView. The refresh button recreates that tile's WebView instead of only reloading the current page.
 7. Use the edit and delete buttons on a profile card to manage saved profiles. These buttons are disabled while that profile is open.
 8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
 9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
@@ -200,7 +200,7 @@ Stats selections are saved per profile, so reopening the same profile restores i
 
 ## Audio Controls
 
-Each browser header includes a refresh button, mute button, and volume slider. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
+Each browser header includes a refresh button, mute button, and volume slider. The refresh button destroys and recreates that tile's WebView, then initializes it with the same profile data, audio state, and stats settings. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
 
 Volume is applied through the Windows audio session for the WebView2 process tree and is reapplied while the WebView is open. This keeps the saved profile volume and mute state in place even if WebView2 recreates its audio sessions.
 
@@ -257,7 +257,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control, which recreates the WebView control and initializes it again for the same profile.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

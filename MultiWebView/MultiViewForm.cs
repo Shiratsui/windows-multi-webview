@@ -390,10 +390,7 @@ public sealed class MultiViewForm : Form
 
         tile.Controls.Add(header, 0, 0);
 
-        webView = new WebView2
-        {
-            Dock = DockStyle.Fill
-        };
+        webView = CreateWebView();
         var tileWebView = webView;
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
@@ -410,9 +407,20 @@ public sealed class MultiViewForm : Form
             () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(tileWebView),
             () => profile.Name);
 
-        refreshButton.Click += (_, _) =>
+        refreshButton.Click += async (_, _) =>
         {
-            tileWebView.CoreWebView2?.Reload();
+            refreshButton.Enabled = false;
+            try
+            {
+                tileWebView = await RecreateWebViewAsync(tile, tileWebView, profile);
+            }
+            finally
+            {
+                if (!refreshButton.IsDisposed)
+                {
+                    refreshButton.Enabled = true;
+                }
+            }
         };
 
         screenshotButton.Click += async (_, _) =>
@@ -425,7 +433,7 @@ public sealed class MultiViewForm : Form
             OpenProfileFolder(profile);
         };
 
-        ConfigureStatsButton(fpsButton, tileWebView, profile);
+        ConfigureStatsButton(fpsButton, () => tileWebView, profile);
 
         volumeSlider.ValueChanged += (_, _) =>
         {
@@ -458,7 +466,59 @@ public sealed class MultiViewForm : Form
         return tile;
     }
 
-    private void ConfigureStatsButton(Button statsButton, WebView2 webView, Profile profile)
+    private static WebView2 CreateWebView()
+    {
+        return new WebView2
+        {
+            Dock = DockStyle.Fill
+        };
+    }
+
+    private async Task<WebView2> RecreateWebViewAsync(TableLayoutPanel tile, WebView2 oldWebView, Profile profile)
+    {
+        CloseStatsMenus();
+
+        var newWebView = CreateWebView();
+        var oldIndex = webViews.IndexOf(oldWebView);
+        if (oldIndex >= 0)
+        {
+            webViews[oldIndex] = newWebView;
+        }
+
+        var oldVolume = volumeByWebView.GetValueOrDefault(oldWebView, Math.Clamp(profile.VolumePercent, 0, 100));
+        var oldMuted = mutedByWebView.GetValueOrDefault(oldWebView, profile.IsMuted);
+        var oldStats = statsByWebView.GetValueOrDefault(oldWebView);
+
+        volumeByWebView[newWebView] = oldVolume;
+        mutedByWebView[newWebView] = oldMuted;
+        statsByWebView[newWebView] = new StatsOverlayState
+        {
+            ShowFps = oldStats?.ShowFps ?? profile.ShowStatsFps,
+            ShowCpu = oldStats?.ShowCpu ?? profile.ShowStatsCpu,
+            ShowMemory = oldStats?.ShowMemory ?? profile.ShowStatsMemory,
+            IsHorizontal = oldStats?.IsHorizontal ?? profile.ShowStatsHorizontal
+        };
+
+        WebViewVolumeController.Attach(
+            newWebView,
+            () => volumeByWebView.GetValueOrDefault(newWebView, 100),
+            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(newWebView),
+            () => profile.Name);
+
+        tile.Controls.Remove(oldWebView);
+        oldStats?.Timer?.Stop();
+        oldStats?.Timer?.Dispose();
+        volumeByWebView.Remove(oldWebView);
+        mutedByWebView.Remove(oldWebView);
+        statsByWebView.Remove(oldWebView);
+        oldWebView.Dispose();
+
+        tile.Controls.Add(newWebView, 0, 1);
+        await InitializeWebViewAsync(newWebView, profile);
+        return newWebView;
+    }
+
+    private void ConfigureStatsButton(Button statsButton, Func<WebView2> getWebView, Profile profile)
     {
         var menu = new ContextMenuStrip
         {
@@ -473,11 +533,11 @@ public sealed class MultiViewForm : Form
         var menuFilterAttached = false;
         statsMenus.Add(menu);
 
-        var state = statsByWebView[webView];
-        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (_, checkedValue) => statsByWebView[webView].ShowFps = checkedValue);
-        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (_, checkedValue) => statsByWebView[webView].ShowCpu = checkedValue);
-        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (_, checkedValue) => statsByWebView[webView].ShowMemory = checkedValue);
-        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (_, checkedValue) => statsByWebView[webView].IsHorizontal = checkedValue);
+        var state = statsByWebView[getWebView()];
+        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (_, checkedValue) => statsByWebView[getWebView()].ShowFps = checkedValue);
+        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (_, checkedValue) => statsByWebView[getWebView()].ShowCpu = checkedValue);
+        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (_, checkedValue) => statsByWebView[getWebView()].ShowMemory = checkedValue);
+        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (_, checkedValue) => statsByWebView[getWebView()].IsHorizontal = checkedValue);
         statsButton.BackColor = state.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
 
         menu.Items.AddRange([fpsItem, cpuItem, memoryItem, horizontalItem]);
@@ -526,6 +586,7 @@ public sealed class MultiViewForm : Form
             {
                 var checkedValue = item.Tag is not true;
                 item.Tag = checkedValue;
+                var webView = getWebView();
                 update(webView, checkedValue);
                 var updatedState = statsByWebView[webView];
                 statsButton.BackColor = updatedState.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
@@ -1006,40 +1067,43 @@ public sealed class MultiViewForm : Form
     {
         for (var index = 0; index < webViews.Count; index++)
         {
-            var webView = webViews[index];
-            var profile = profiles[index];
-            var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
-            var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
-
-            await webView.EnsureCoreWebView2Async(environment);
-            webView.CoreWebView2.WebMessageReceived += (_, args) =>
-            {
-                if (args.TryGetWebMessageAsString() == "__multi_webview_close_stats_menu")
-                {
-                    CloseStatsMenus();
-                }
-            };
-            webView.CoreWebView2.NavigationCompleted += async (_, _) =>
-            {
-                if (statsByWebView.GetValueOrDefault(webView)?.AnyEnabled == true)
-                {
-                    await RefreshStatsOverlayAsync(webView);
-                }
-
-                await InstallStatsMenuCloseHandlersAsync(webView);
-            };
-            webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => CloseStatsMenus();
-            await WebViewVolumeController.EnsureAudioSessionAsync(webView);
-            await WebViewVolumeController.ConfigureAsync(
-                webView,
-                () => volumeByWebView.GetValueOrDefault(webView, 100),
-                () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
-                () => profile.Name);
-            await SetNativeFpsCounterAsync(webView, statsByWebView.GetValueOrDefault(webView)?.ShowFps == true);
-            await RefreshStatsOverlayAsync(webView);
-            EnsureStatsTimer(webView);
-            webView.Source = new Uri(profile.StartUrl);
+            await InitializeWebViewAsync(webViews[index], profiles[index]);
         }
+    }
+
+    private async Task InitializeWebViewAsync(WebView2 webView, Profile profile)
+    {
+        var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
+        var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
+
+        await webView.EnsureCoreWebView2Async(environment);
+        webView.CoreWebView2.WebMessageReceived += (_, args) =>
+        {
+            if (args.TryGetWebMessageAsString() == "__multi_webview_close_stats_menu")
+            {
+                CloseStatsMenus();
+            }
+        };
+        webView.CoreWebView2.NavigationCompleted += async (_, _) =>
+        {
+            if (statsByWebView.GetValueOrDefault(webView)?.AnyEnabled == true)
+            {
+                await RefreshStatsOverlayAsync(webView);
+            }
+
+            await InstallStatsMenuCloseHandlersAsync(webView);
+        };
+        webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => CloseStatsMenus();
+        await WebViewVolumeController.EnsureAudioSessionAsync(webView);
+        await WebViewVolumeController.ConfigureAsync(
+            webView,
+            () => volumeByWebView.GetValueOrDefault(webView, 100),
+            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
+            () => profile.Name);
+        await SetNativeFpsCounterAsync(webView, statsByWebView.GetValueOrDefault(webView)?.ShowFps == true);
+        await RefreshStatsOverlayAsync(webView);
+        EnsureStatsTimer(webView);
+        webView.Source = new Uri(profile.StartUrl);
     }
 
     private void AttachTitleBarDrag(Control control)
