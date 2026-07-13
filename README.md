@@ -10,10 +10,11 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Show opened profile names in multi-view window titles and tray tooltips.
 - Use distinct runtime window and tray icons for the profile picker and multi-view browser windows.
 - Show profile state chips: grey `OFF`, green `OPEN`, orange `TRAY`, plus a red `KEEP RUNNING` chip when the owning multi-view window is in keep-running tray mode.
+- Show a dark live usage popup with CPU, memory, GPU, and GPU VRAM while hovering an open profile card in the picker.
 - Recreate individual WebView tiles from their browser headers when a full WebView refresh is needed.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
-- Show an optional per-tile stats overlay for FPS, render latency, CPU, and memory.
+- Show an optional per-tile stats overlay for FPS, render latency, CPU, memory, GPU, and GPU VRAM.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker when they are not currently open.
 - Change and open the profile storage folder from the app.
@@ -185,6 +186,8 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 
 Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, or deleted again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
 
+Hovering an open profile card shows a compact dark usage popup with live CPU, memory, GPU, and GPU VRAM values for that profile's WebView2 processes.
+
 ## Stats Overlay
 
 Each WebView tile has a `STAT` menu with checkboxes for:
@@ -192,11 +195,15 @@ Each WebView tile has a `STAT` menu with checkboxes for:
 - `FPS`: page render frames per second, measured with `requestAnimationFrame`.
 - `CPU`: approximate CPU usage for the WebView2 process tree.
 - `Memory`: approximate working set memory for the WebView2 process tree.
+- `GPU`: approximate GPU engine utilization for the WebView2 process tree, from Windows GPU performance counters.
+- `GPU VRAM`: approximate local/dedicated GPU memory for the WebView2 process tree, from Windows GPU performance counters.
 - `Horizontal`: display selected stats on one line separated by `|` instead of stacked vertically.
 
 When `FPS` is enabled, the overlay also shows `LAT`, which is render frame time in milliseconds, not network ping or server latency.
 
-Stats selections are saved per profile, so reopening the same profile restores its last selected overlay options. The stats menu stays open while toggling options, closes when `STAT` is clicked again, and closes when the user clicks the page, clicks outside the menu, or switches to another application. GPU usage is not shown because WebView2 and normal Windows APIs do not expose reliable per-WebView GPU utilization.
+Stats selections are saved per profile, so reopening the same profile restores its last selected overlay options. The stats menu stays open while toggling options, closes when `STAT` is clicked again, and closes when the user clicks the page, clicks outside the menu, or switches to another application. GPU values are approximate because Chromium can share GPU work across WebView2 processes and Windows reports the data through process-level performance counters.
+
+Stats sampling is lightweight but not free. Per-tile stats timers run only while at least one stats option is enabled, and the profile-picker usage popup samples only while hovering an open profile card. GPU and GPU VRAM sampling use Windows performance counters and are more expensive than CPU or memory sampling, so leave them disabled during games unless you need to inspect them.
 
 ## Audio Controls
 

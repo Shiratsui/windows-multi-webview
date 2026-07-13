@@ -2,6 +2,12 @@
 
 Change notes for tagged Multi WebView releases. Entries are based on the Git tag history.
 
+## Unreleased
+
+- Added optional `GPU` and `GPU VRAM` entries to each WebView tile's `STAT` menu.
+- Persisted GPU stats overlay selections per profile.
+- Added a dark live usage popup when hovering open profile cards in the profile picker.
+
 ## v0.4.0
 
 - Changed the per-tile refresh button to recreate the selected WebView instead of reloading the current page.

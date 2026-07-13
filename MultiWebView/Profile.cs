@@ -12,5 +12,7 @@ public sealed class Profile
     public bool ShowStatsFps { get; set; }
     public bool ShowStatsCpu { get; set; }
     public bool ShowStatsMemory { get; set; }
+    public bool ShowStatsGpu { get; set; }
+    public bool ShowStatsGpuMemory { get; set; }
     public bool ShowStatsHorizontal { get; set; }
 }

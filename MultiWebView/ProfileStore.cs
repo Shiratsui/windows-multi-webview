@@ -134,11 +134,15 @@ public sealed class ProfileStore
         bool showFps,
         bool showCpu,
         bool showMemory,
+        bool showGpu,
+        bool showGpuMemory,
         bool showHorizontal)
     {
         selectedProfile.ShowStatsFps = showFps;
         selectedProfile.ShowStatsCpu = showCpu;
         selectedProfile.ShowStatsMemory = showMemory;
+        selectedProfile.ShowStatsGpu = showGpu;
+        selectedProfile.ShowStatsGpuMemory = showGpuMemory;
         selectedProfile.ShowStatsHorizontal = showHorizontal;
 
         var profiles = LoadProfiles().ToList();
@@ -153,6 +157,8 @@ public sealed class ProfileStore
             profile.ShowStatsFps = showFps;
             profile.ShowStatsCpu = showCpu;
             profile.ShowStatsMemory = showMemory;
+            profile.ShowStatsGpu = showGpu;
+            profile.ShowStatsGpuMemory = showGpuMemory;
             profile.ShowStatsHorizontal = showHorizontal;
         }
 

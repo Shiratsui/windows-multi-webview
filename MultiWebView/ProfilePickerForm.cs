@@ -18,7 +18,18 @@ public sealed class ProfilePickerForm : Form
     private readonly TextBox profileNameTextBox = new();
     private readonly TextBox profileUrlTextBox = new();
     private readonly NotifyIcon trayIcon = new();
+    private readonly System.Windows.Forms.Timer profileUsageTimer = new() { Interval = 1000 };
     private ActionButtonControl? createMultiViewButton;
+    private Form? profileUsagePopup;
+    private Label? usageTitleLabel;
+    private Label? usageStateLabel;
+    private Label? usageCpuValueLabel;
+    private Label? usageMemoryValueLabel;
+    private Label? usageGpuValueLabel;
+    private Label? usageGpuMemoryValueLabel;
+    private Profile? hoveredOpenProfile;
+    private Panel? hoveredOpenProfileCard;
+    private bool isUpdatingProfileUsage;
     private readonly Color btnNormal = Color.FromArgb(28, 28, 28);
     private readonly Color btnHover = Color.FromArgb(60, 60, 60);
     private readonly Color btnCloseHover = Color.FromArgb(232, 17, 35);
@@ -58,6 +69,8 @@ public sealed class ProfilePickerForm : Form
         BuildLayout();
         BuildTitleBar();
         LoadProfiles();
+
+        profileUsageTimer.Tick += async (_, _) => await UpdateProfileUsagePopupAsync();
     }
 
     private void BuildTitleBar()
@@ -322,6 +335,7 @@ public sealed class ProfilePickerForm : Form
 
     private void LoadProfiles()
     {
+        HideProfileUsagePopup();
         profileList.Controls.Clear();
         profileCards.Clear();
         selectedProfileIds.RemoveWhere(openProfileIds.Contains);
@@ -467,12 +481,28 @@ public sealed class ProfilePickerForm : Form
 
         card.MouseEnter += (_, _) =>
         {
-            if (!selectedProfileIds.Contains(profile.Id) && !IsProfileOpen(profile))
+            if (IsProfileOpen(profile))
+            {
+                ShowProfileUsagePopup(profile, card);
+            }
+            else if (!selectedProfileIds.Contains(profile.Id))
             {
                 card.BackColor = profileCardHover;
             }
         };
-        card.MouseLeave += (_, _) => UpdateProfileCardSelection(profile);
+        card.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(profile, card);
+        foreach (Control child in card.Controls)
+        {
+            child.MouseEnter += (_, _) =>
+            {
+                if (IsProfileOpen(profile))
+                {
+                    ShowProfileUsagePopup(profile, card);
+                }
+            };
+            child.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(profile, card);
+        }
+
         UpdateProfileCardSelection(profile);
 
         return card;
@@ -622,6 +652,215 @@ public sealed class ProfilePickerForm : Form
             : profileCardNormal;
     }
 
+    private void ShowProfileUsagePopup(Profile profile, Panel card)
+    {
+        if (!openProfileWindows.TryGetValue(profile.Id, out var window) || window.IsDisposed)
+        {
+            HideProfileUsagePopup();
+            return;
+        }
+
+        hoveredOpenProfile = profile;
+        hoveredOpenProfileCard = card;
+        EnsureProfileUsagePopup();
+        PositionProfileUsagePopup(card);
+
+        if (profileUsagePopup is { Visible: false })
+        {
+            profileUsagePopup.Show(this);
+        }
+
+        profileUsageTimer.Start();
+        _ = UpdateProfileUsagePopupAsync();
+    }
+
+    private void ScheduleProfileUsagePopupHide(Profile profile, Panel card)
+    {
+        BeginInvoke((MethodInvoker)(() =>
+        {
+            if (hoveredOpenProfile?.Id == profile.Id && hoveredOpenProfileCard == card && IsMouseOverControl(card))
+            {
+                return;
+            }
+
+            if (!IsProfileOpen(profile))
+            {
+                UpdateProfileCardSelection(profile);
+            }
+
+            HideProfileUsagePopup();
+        }));
+    }
+
+    private async Task UpdateProfileUsagePopupAsync()
+    {
+        if (isUpdatingProfileUsage || hoveredOpenProfile is not { } profile || profileUsagePopup is null)
+        {
+            return;
+        }
+
+        if (!openProfileWindows.TryGetValue(profile.Id, out var window) || window.IsDisposed)
+        {
+            HideProfileUsagePopup();
+            return;
+        }
+
+        isUpdatingProfileUsage = true;
+        try
+        {
+            var snapshot = await window.GetProfileUsageAsync(profile.Id);
+            if (snapshot is null)
+            {
+                return;
+            }
+
+            usageTitleLabel!.Text = snapshot.Value.ProfileName;
+            usageStateLabel!.Text = snapshot.Value.State;
+            usageCpuValueLabel!.Text = snapshot.Value.Cpu;
+            usageMemoryValueLabel!.Text = snapshot.Value.Memory;
+            usageGpuValueLabel!.Text = snapshot.Value.Gpu;
+            usageGpuMemoryValueLabel!.Text = snapshot.Value.GpuMemory;
+        }
+        finally
+        {
+            isUpdatingProfileUsage = false;
+        }
+    }
+
+    private void HideProfileUsagePopup()
+    {
+        profileUsageTimer.Stop();
+        hoveredOpenProfile = null;
+        hoveredOpenProfileCard = null;
+        if (profileUsagePopup is not null)
+        {
+            profileUsagePopup.Hide();
+        }
+    }
+
+    private void EnsureProfileUsagePopup()
+    {
+        if (profileUsagePopup is not null)
+        {
+            return;
+        }
+
+        profileUsagePopup = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Size = new Size(196, 162),
+            BackColor = Color.FromArgb(18, 18, 18),
+            Padding = new Padding(12),
+            TopMost = TopMost
+        };
+
+        var content = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 6,
+            ColumnCount = 2,
+            BackColor = Color.FromArgb(18, 18, 18)
+        };
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        profileUsagePopup.Controls.Add(content);
+
+        usageTitleLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        content.Controls.Add(usageTitleLabel, 0, 0);
+        content.SetColumnSpan(usageTitleLabel, 2);
+
+        usageStateLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(130, 220, 170),
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            AutoEllipsis = true,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        content.Controls.Add(usageStateLabel, 0, 1);
+        content.SetColumnSpan(usageStateLabel, 2);
+
+        usageCpuValueLabel = AddUsageRow(content, 2, "CPU", Color.FromArgb(127, 199, 255));
+        usageMemoryValueLabel = AddUsageRow(content, 3, "MEM", Color.FromArgb(255, 207, 90));
+        usageGpuValueLabel = AddUsageRow(content, 4, "GPU", Color.FromArgb(255, 128, 213));
+        usageGpuMemoryValueLabel = AddUsageRow(content, 5, "VRAM", Color.FromArgb(199, 140, 255));
+
+        profileUsagePopup.Paint += (_, e) =>
+        {
+            using var pen = new Pen(Color.FromArgb(64, 64, 64));
+            e.Graphics.DrawRectangle(pen, 0, 0, profileUsagePopup.Width - 1, profileUsagePopup.Height - 1);
+        };
+    }
+
+    private static Label AddUsageRow(TableLayoutPanel content, int row, string title, Color titleColor)
+    {
+        var titleLabel = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            ForeColor = titleColor,
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        content.Controls.Add(titleLabel, 0, row);
+
+        var valueLabel = new Label
+        {
+            Text = "--",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight
+        };
+        content.Controls.Add(valueLabel, 1, row);
+        return valueLabel;
+    }
+
+    private void PositionProfileUsagePopup(Control card)
+    {
+        if (profileUsagePopup is null)
+        {
+            return;
+        }
+
+        var cardBounds = card.RectangleToScreen(card.ClientRectangle);
+        var screen = Screen.FromControl(card).WorkingArea;
+        var x = cardBounds.Right + 8;
+        var y = cardBounds.Top + 8;
+
+        if (x + profileUsagePopup.Width > screen.Right)
+        {
+            x = cardBounds.Left - profileUsagePopup.Width - 8;
+        }
+
+        if (y + profileUsagePopup.Height > screen.Bottom)
+        {
+            y = Math.Max(screen.Top, screen.Bottom - profileUsagePopup.Height);
+        }
+
+        profileUsagePopup.Location = new Point(Math.Max(screen.Left, x), Math.Max(screen.Top, y));
+    }
+
+    private static bool IsMouseOverControl(Control control)
+    {
+        return control.RectangleToScreen(control.ClientRectangle).Contains(Cursor.Position);
+    }
+
     private void UpdateMultiViewButton()
     {
         if (createMultiViewButton is null)
@@ -702,6 +941,7 @@ public sealed class ProfilePickerForm : Form
 
     private void ActivateOpenProfileWindow(Profile profile)
     {
+        HideProfileUsagePopup();
         if (openProfileWindows.TryGetValue(profile.Id, out var window) && !window.IsDisposed)
         {
             window.ActivateFromProfilePicker();
@@ -848,6 +1088,10 @@ public sealed class ProfilePickerForm : Form
     {
         isPinned = !isPinned;
         TopMost = isPinned;
+        if (profileUsagePopup is not null)
+        {
+            profileUsagePopup.TopMost = isPinned;
+        }
 
         if (btnPin is not null)
         {
@@ -858,6 +1102,7 @@ public sealed class ProfilePickerForm : Form
 
     private void MinimizeToTray()
     {
+        HideProfileUsagePopup();
         if (isMinimizedToTray)
         {
             if (Visible)
@@ -959,6 +1204,9 @@ public sealed class ProfilePickerForm : Form
     {
         if (disposing)
         {
+            profileUsageTimer.Stop();
+            profileUsageTimer.Dispose();
+            profileUsagePopup?.Dispose();
             trayIcon.Dispose();
         }
 

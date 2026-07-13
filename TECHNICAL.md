@@ -55,6 +55,8 @@ Current fields:
 - `ShowStatsFps`: saved stats overlay FPS setting.
 - `ShowStatsCpu`: saved stats overlay CPU setting.
 - `ShowStatsMemory`: saved stats overlay memory setting.
+- `ShowStatsGpu`: saved stats overlay GPU utilization setting.
+- `ShowStatsGpuMemory`: saved stats overlay GPU memory setting.
 - `ShowStatsHorizontal`: saved stats overlay horizontal layout setting.
 
 The profile ID is used as the persistent folder name and the key for open/selected profile tracking.
@@ -113,6 +115,7 @@ Responsibilities:
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
+- Show a live dark hover popup for open profile cards with CPU, memory, GPU, and GPU memory values sampled from the owning `MultiViewForm`.
 - Open newly created profiles in one-tile `MultiViewForm` windows.
 - Open selected profiles together in tiled `MultiViewForm` windows.
 - Hide to tray from the custom close button and restore from tray.
@@ -125,6 +128,7 @@ Open profile tracking:
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
 - Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards disable their edit and delete buttons and call `ActivateOpenProfileWindow(...)` when clicked, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
+- Hovering an open profile card shows a borderless dark popup owned by the picker. The popup updates once per second by calling `MultiViewForm.GetProfileUsageAsync(profileId)` on the owning browser window, then hides when the pointer leaves the card, the picker is sent to tray, or the card is activated.
 
 Selection:
 
@@ -152,7 +156,7 @@ Per-tile state:
 
 - `volumeByWebView`: current volume value for each WebView.
 - `mutedByWebView`: current mute state for each WebView.
-- `statsByWebView`: current stats overlay options and CPU sampling state for each WebView.
+- `statsByWebView`: current stats overlay options and CPU/memory sampling state for each WebView.
 - The profile object supplies the display name and start URL.
 
 Initialization flow:
@@ -178,6 +182,8 @@ Each WebView tile has a `STAT` button that opens a custom dark `ContextMenuStrip
 - `FPS`
 - `CPU`
 - `Memory`
+- `GPU`
+- `GPU VRAM`
 - `Horizontal`
 
 The menu uses `AutoClose = false` so selecting several stats does not close and reopen the dropdown. `StatsMenuMessageFilter` closes the menu when the user clicks outside the menu or `STAT` button. The WebView surface is a separate child browser HWND, so WebView page clicks are handled by injecting a small script that posts `__multi_webview_close_stats_menu` through `chrome.webview.postMessage(...)`; the host receives that message and calls `CloseStatsMenus()`. `MultiViewForm.Deactivate` also closes open stats menus when the user switches to another application.
@@ -185,15 +191,17 @@ The menu uses `AutoClose = false` so selecting several stats does not close and 
 The stats overlay itself is injected into the page with `ExecuteScriptAsync(...)`. It creates a fixed-position element with ID `__multi_webview_stats_overlay` and updates it from two sources:
 
 - In-page `requestAnimationFrame` loop for FPS and `LAT`.
-- Host-side timer for CPU and memory samples.
+- Host-side timer for CPU, memory, GPU, and GPU memory samples.
 
 `LAT` is render frame time in milliseconds. It is not network ping or server latency.
 
-Stats selections are persisted per profile through `ProfileStore.UpdateProfileStats(...)`. `CreateTile(...)` initializes each tile's `StatsOverlayState` and check marks from the profile's saved stats fields. After `EnsureCoreWebView2Async(...)`, saved stats are applied by refreshing the injected overlay, starting the stats timer when needed, and enabling Chromium's native FPS counter path when FPS is selected.
+Stats selections are persisted per profile through `ProfileStore.UpdateProfileStats(...)`. `CreateTile(...)` initializes each tile's `StatsOverlayState` and check marks from the profile's saved stats fields. After the first navigation completes, saved stats are applied by refreshing the injected overlay and starting the stats timer when needed.
 
-CPU and memory are sampled approximately from the WebView2 process tree. The root is `CoreWebView2.BrowserProcessId`; the process tree is found by reusing `WebViewVolumeController.GetProcessTreeIds(...)`. CPU is computed from the delta of summed `Process.TotalProcessorTime` over elapsed wall time and normalized by `Environment.ProcessorCount`. Memory is the summed `WorkingSet64` of the same process tree.
+CPU, memory, GPU, and GPU memory are sampled approximately from the WebView2 process tree. The root is `CoreWebView2.BrowserProcessId`; the process tree is found by reusing `WebViewVolumeController.GetProcessTreeIds(...)`. CPU is computed from the delta of summed `Process.TotalProcessorTime` over elapsed wall time and normalized by `Environment.ProcessorCount`. Memory is the summed `WorkingSet64` of the same process tree.
 
-GPU is intentionally not exposed in the stats menu. WebView2 and normal Windows APIs do not provide a reliable per-WebView GPU utilization value, and the Chromium GPU process can be shared or reported inconsistently.
+GPU utilization and GPU VRAM use Windows performance counters. `MultiViewForm` gets the active WebView2 process IDs from `CoreWebView2Environment.GetProcessInfos()`, then `GpuStatsSampler` sums matching `GPU Engine` utilization instances and `GPU Process Memory` local/dedicated memory instances. GPU utilization counters are cached because Windows percentage counters need a previous sample before they can report useful values. These values are process-level approximations; Chromium can share GPU work across WebView2 processes, and Windows counter availability can vary by GPU driver and OS configuration.
+
+Performance impact is controlled by when sampling runs. A WebView tile starts its stats timer only while at least one overlay option is enabled, and `ProfilePickerForm` starts its profile usage timer only while hovering an open profile card. CPU and memory sampling are simple process snapshots. GPU and GPU memory sampling are heavier because they enumerate Windows performance counters, so they should be treated as diagnostic metrics rather than always-on game telemetry.
 
 The overlay supports vertical and horizontal layout. In horizontal mode, selected values are joined with `|`. The FPS and frame-time values are stored on `window.__multiWebViewStats...` fields so host-side CPU/memory refreshes do not reset them to placeholder values.
 

@@ -16,6 +16,8 @@ public sealed class MultiViewForm : Form
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly Dictionary<WebView2, StatsOverlayState> statsByWebView = [];
+    private readonly Dictionary<WebView2, CoreWebView2Environment> environmentsByWebView = [];
+    private readonly Dictionary<string, ProfileUsageSampleState> usageSamplesByProfileId = [];
     private readonly List<ContextMenuStrip> statsMenus = [];
     private readonly ContextMenuStrip trayModeMenu;
     private readonly ToolTip toolTip = new();
@@ -399,6 +401,8 @@ public sealed class MultiViewForm : Form
             ShowFps = profile.ShowStatsFps,
             ShowCpu = profile.ShowStatsCpu,
             ShowMemory = profile.ShowStatsMemory,
+            ShowGpu = profile.ShowStatsGpu,
+            ShowGpuMemory = profile.ShowStatsGpuMemory,
             IsHorizontal = profile.ShowStatsHorizontal
         };
         WebViewVolumeController.Attach(
@@ -496,6 +500,8 @@ public sealed class MultiViewForm : Form
             ShowFps = oldStats?.ShowFps ?? profile.ShowStatsFps,
             ShowCpu = oldStats?.ShowCpu ?? profile.ShowStatsCpu,
             ShowMemory = oldStats?.ShowMemory ?? profile.ShowStatsMemory,
+            ShowGpu = oldStats?.ShowGpu ?? profile.ShowStatsGpu,
+            ShowGpuMemory = oldStats?.ShowGpuMemory ?? profile.ShowStatsGpuMemory,
             IsHorizontal = oldStats?.IsHorizontal ?? profile.ShowStatsHorizontal
         };
 
@@ -511,6 +517,7 @@ public sealed class MultiViewForm : Form
         volumeByWebView.Remove(oldWebView);
         mutedByWebView.Remove(oldWebView);
         statsByWebView.Remove(oldWebView);
+        environmentsByWebView.Remove(oldWebView);
         oldWebView.Dispose();
 
         tile.Controls.Add(newWebView, 0, 1);
@@ -537,10 +544,12 @@ public sealed class MultiViewForm : Form
         var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (_, checkedValue) => statsByWebView[getWebView()].ShowFps = checkedValue);
         var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (_, checkedValue) => statsByWebView[getWebView()].ShowCpu = checkedValue);
         var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (_, checkedValue) => statsByWebView[getWebView()].ShowMemory = checkedValue);
+        var gpuItem = CreateStatsMenuItem("GPU", state.ShowGpu, (_, checkedValue) => statsByWebView[getWebView()].ShowGpu = checkedValue);
+        var gpuMemoryItem = CreateStatsMenuItem("GPU VRAM", state.ShowGpuMemory, (_, checkedValue) => statsByWebView[getWebView()].ShowGpuMemory = checkedValue);
         var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (_, checkedValue) => statsByWebView[getWebView()].IsHorizontal = checkedValue);
         statsButton.BackColor = state.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
 
-        menu.Items.AddRange([fpsItem, cpuItem, memoryItem, horizontalItem]);
+        menu.Items.AddRange([fpsItem, cpuItem, memoryItem, gpuItem, gpuMemoryItem, horizontalItem]);
 
         statsButton.Click += (_, _) =>
         {
@@ -595,8 +604,9 @@ public sealed class MultiViewForm : Form
                     updatedState.ShowFps,
                     updatedState.ShowCpu,
                     updatedState.ShowMemory,
+                    updatedState.ShowGpu,
+                    updatedState.ShowGpuMemory,
                     updatedState.IsHorizontal);
-                await SetNativeFpsCounterAsync(webView, updatedState.ShowFps);
                 await RefreshStatsOverlayAsync(webView);
                 EnsureStatsTimer(webView);
             };
@@ -636,33 +646,26 @@ public sealed class MultiViewForm : Form
             return;
         }
 
-        if (!state.AnyEnabled)
-        {
-            await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(null));
-            return;
-        }
-
-        var snapshot = await CreateStatsSnapshotAsync(webView, state);
-        await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(snapshot));
-    }
-
-    private static async Task SetNativeFpsCounterAsync(WebView2 webView, bool show)
-    {
-        if (webView.CoreWebView2 is null)
+        if (state.IsRefreshing)
         {
             return;
         }
 
+        state.IsRefreshing = true;
         try
         {
-            var parameters = show ? "{\"show\":true}" : "{\"show\":false}";
-            await webView.CoreWebView2.CallDevToolsProtocolMethodAsync(
-                "Rendering.setShowFPSCounter",
-                parameters);
+            if (!state.AnyEnabled)
+            {
+                await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(null));
+                return;
+            }
+
+            var snapshot = await CreateStatsSnapshotAsync(webView, state);
+            await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(snapshot));
         }
-        catch
+        finally
         {
-            // The FPS overlay is a Chromium debugging feature; unsupported runtimes should not break browsing.
+            state.IsRefreshing = false;
         }
     }
 
@@ -678,33 +681,58 @@ public sealed class MultiViewForm : Form
         }
     }
 
-    private Task<object> CreateStatsSnapshotAsync(WebView2 webView, StatsOverlayState state)
+    private async Task<object> CreateStatsSnapshotAsync(WebView2 webView, StatsOverlayState state)
     {
         var cpuText = "--";
         var memoryText = "--";
+        var gpuText = "--";
+        var gpuMemoryText = "--";
 
         if (state.ShowCpu || state.ShowMemory)
         {
             SampleWebViewProcessTree(webView, state, out cpuText, out memoryText);
         }
 
-        return Task.FromResult<object>(new
+        if (state.ShowGpu || state.ShowGpuMemory)
+        {
+            var processIds = GetWebView2ProcessIds(webView);
+            var snapshot = await Task.Run(() => GpuStatsSampler.Sample(processIds));
+
+            if (snapshot.HasGpuUtilization)
+            {
+                gpuText = $"{Math.Clamp(snapshot.GpuUtilizationPercent, 0, 999):0}%";
+            }
+
+            if (snapshot.HasGpuMemory)
+            {
+                gpuMemoryText = $"{snapshot.GpuMemoryBytes / 1024d / 1024d:0} MB";
+            }
+        }
+
+        return new
         {
             fps = state.ShowFps,
             cpu = state.ShowCpu ? cpuText : null,
             memory = state.ShowMemory ? memoryText : null,
+            gpu = state.ShowGpu ? gpuText : null,
+            gpuMemory = state.ShowGpuMemory ? gpuMemoryText : null,
             horizontal = state.IsHorizontal
-        });
+        };
     }
 
     private static void SampleWebViewProcessTree(WebView2 webView, StatsOverlayState state, out string cpuText, out string memoryText)
+    {
+        var processIds = WebViewVolumeController.GetProcessTreeIds((int)webView.CoreWebView2.BrowserProcessId);
+        SampleProcessIds(processIds, state, out cpuText, out memoryText);
+    }
+
+    private static void SampleProcessIds(IReadOnlySet<int> processIds, CpuMemorySampleState state, out string cpuText, out string memoryText)
     {
         cpuText = "--";
         memoryText = "--";
 
         try
         {
-            var processIds = WebViewVolumeController.GetProcessTreeIds((int)webView.CoreWebView2.BrowserProcessId);
             var totalProcessorTime = TimeSpan.Zero;
             var totalMemoryBytes = 0L;
 
@@ -737,6 +765,65 @@ public sealed class MultiViewForm : Form
         catch
         {
         }
+    }
+
+    private HashSet<int> GetWebView2ProcessIds(WebView2 webView)
+    {
+        try
+        {
+            if (environmentsByWebView.TryGetValue(webView, out var environment))
+            {
+                return environment.GetProcessInfos()
+                    .Select(processInfo => processInfo.ProcessId)
+                    .Where(processId => processId > 0)
+                    .ToHashSet();
+            }
+        }
+        catch
+        {
+        }
+
+        return WebViewVolumeController.GetProcessTreeIds((int)webView.CoreWebView2.BrowserProcessId);
+    }
+
+    public async Task<ProfileUsageSnapshot?> GetProfileUsageAsync(string profileId)
+    {
+        var index = profiles.ToList().FindIndex(profile => profile.Id == profileId);
+        if (index < 0 || index >= webViews.Count)
+        {
+            return null;
+        }
+
+        var webView = webViews[index];
+        if (webView.IsDisposed || webView.CoreWebView2 is null)
+        {
+            return null;
+        }
+
+        var profile = profiles[index];
+        var processIds = GetWebView2ProcessIds(webView);
+        if (!usageSamplesByProfileId.TryGetValue(profileId, out var sampleState))
+        {
+            sampleState = new ProfileUsageSampleState();
+            usageSamplesByProfileId[profileId] = sampleState;
+        }
+
+        SampleProcessIds(processIds, sampleState, out var cpuText, out var memoryText);
+        var gpuSnapshot = await Task.Run(() => GpuStatsSampler.Sample(processIds));
+        var gpuText = gpuSnapshot.HasGpuUtilization
+            ? $"{Math.Clamp(gpuSnapshot.GpuUtilizationPercent, 0, 999):0}%"
+            : "--";
+        var gpuMemoryText = gpuSnapshot.HasGpuMemory
+            ? $"{gpuSnapshot.GpuMemoryBytes / 1024d / 1024d:0} MB"
+            : "--";
+
+        return new ProfileUsageSnapshot(
+            profile.Name,
+            IsInTray ? IsKeepRunningInTray ? "Keep running in tray" : "In tray" : "Open",
+            cpuText,
+            memoryText,
+            gpuText,
+            gpuMemoryText);
     }
 
     private static string CreateStatsOverlayScript(object? snapshot)
@@ -803,6 +890,12 @@ public sealed class MultiViewForm : Form
                     }
                     if (data.memory !== null && data.memory !== undefined) {
                         lines.push(`<span style="color:#ffcf5a">MEM</span> ${data.memory}`);
+                    }
+                    if (data.gpu !== null && data.gpu !== undefined) {
+                        lines.push(`<span style="color:#ff80d5">GPU</span> ${data.gpu}`);
+                    }
+                    if (data.gpuMemory !== null && data.gpuMemory !== undefined) {
+                        lines.push(`<span style="color:#c78cff">VRAM</span> ${data.gpuMemory}`);
                     }
                     overlay.innerHTML = data.horizontal ? lines.join(" <span style=\"color:#777\">|</span> ") : lines.join("<br>");
                 };
@@ -1077,6 +1170,7 @@ public sealed class MultiViewForm : Form
         var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
 
         await webView.EnsureCoreWebView2Async(environment);
+        environmentsByWebView[webView] = environment;
         webView.CoreWebView2.WebMessageReceived += (_, args) =>
         {
             if (args.TryGetWebMessageAsString() == "__multi_webview_close_stats_menu")
@@ -1089,6 +1183,7 @@ public sealed class MultiViewForm : Form
             if (statsByWebView.GetValueOrDefault(webView)?.AnyEnabled == true)
             {
                 await RefreshStatsOverlayAsync(webView);
+                EnsureStatsTimer(webView);
             }
 
             await InstallStatsMenuCloseHandlersAsync(webView);
@@ -1100,9 +1195,6 @@ public sealed class MultiViewForm : Form
             () => volumeByWebView.GetValueOrDefault(webView, 100),
             () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
             () => profile.Name);
-        await SetNativeFpsCounterAsync(webView, statsByWebView.GetValueOrDefault(webView)?.ShowFps == true);
-        await RefreshStatsOverlayAsync(webView);
-        EnsureStatsTimer(webView);
         webView.Source = new Uri(profile.StartUrl);
     }
 
@@ -1536,16 +1628,23 @@ public sealed class MultiViewForm : Form
         base.Dispose(disposing);
     }
 
-    private sealed class StatsOverlayState
+    private sealed class StatsOverlayState : CpuMemorySampleState
     {
         public bool ShowFps { get; set; }
         public bool ShowCpu { get; set; }
         public bool ShowMemory { get; set; }
+        public bool ShowGpu { get; set; }
+        public bool ShowGpuMemory { get; set; }
         public bool IsHorizontal { get; set; }
         public System.Windows.Forms.Timer? Timer { get; set; }
+        public bool IsRefreshing { get; set; }
+        public bool AnyEnabled => ShowFps || ShowCpu || ShowMemory || ShowGpu || ShowGpuMemory;
+    }
+
+    private class CpuMemorySampleState
+    {
         public DateTime? LastSampleUtc { get; set; }
         public TimeSpan LastProcessorTime { get; set; }
-        public bool AnyEnabled => ShowFps || ShowCpu || ShowMemory;
 
         public void ResetSample()
         {
@@ -1553,6 +1652,8 @@ public sealed class MultiViewForm : Form
             LastProcessorTime = TimeSpan.Zero;
         }
     }
+
+    private sealed class ProfileUsageSampleState : CpuMemorySampleState;
 
     private sealed class StatsMenuRenderer : ToolStripProfessionalRenderer
     {
