@@ -59,7 +59,16 @@ static class Program
                     return;
                 }
 
-                picker.BeginInvoke(new Action(picker.ActivateFromExternalLaunch));
+                try
+                {
+                    if (!picker.IsDisposed && picker.IsHandleCreated)
+                    {
+                        picker.BeginInvoke(new Action(picker.ActivateFromExternalLaunch));
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
             },
             null,
             Timeout.Infinite,

@@ -117,6 +117,8 @@ Responsibilities:
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
+- Transfer profile ownership when a tile is popped out into a new one-profile `MultiViewForm`.
+- Transfer profile ownership when a `MultiViewForm` is dragged into another browser window.
 - Show a live dark hover popup for open profile cards with CPU, memory, GPU, and GPU memory values sampled from the owning `MultiViewForm`.
 - Open newly created profiles in one-tile `MultiViewForm` windows.
 - Open selected profiles together in tiled `MultiViewForm` windows.
@@ -129,8 +131,11 @@ Open profile tracking:
 - `openProfileWindows` maps each open profile ID to the owning `MultiViewForm`.
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
+- `TrackOpenWindow(...)` keeps a mutable ownership set for each window. When `MultiViewForm.ProfilePoppedOut` fires, the popped profile ID is removed from the source window's set before the new one-profile window is tracked. This prevents the source window's later `FormClosed` cleanup from incorrectly marking the popped profile as closed.
+- When `MultiViewForm.ProfileMovedToWindow` fires after drag-to-combine, `TrackOpenWindow(...)` removes all moved profile IDs from the source window's ownership set, adds them to the target window's set, and updates each `openProfileWindows[profileId]` entry to the target. The source window then closes empty without releasing the moved profiles.
+- Profile cards are reused by profile ID during `LoadProfiles()`. State-only changes update existing card labels, badges, colors, and button states in place instead of clearing and recreating the full `FlowLayoutPanel`, which avoids visible blinking during open/tray/keep-running transitions.
 - Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards disable their edit and delete buttons and call `ActivateOpenProfileWindow(...)` when clicked, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
-- Hovering an open profile card shows a borderless dark popup owned by the picker. The popup updates once per second by calling `MultiViewForm.GetProfileUsageAsync(profileId)` on the owning browser window, then hides when the pointer leaves the card, the picker is sent to tray, or the card is activated.
+- Hovering an open profile card shows a borderless dark popup owned by the picker. The popup header shows the profile name on the left and the open/tray state on the right, followed by a divider and CPU, memory, GPU, and GPU memory rows. The popup updates once per second by calling `MultiViewForm.GetProfileUsageAsync(profileId)` on the owning browser window, then hides when the pointer leaves the card, the picker is sent to tray, or the card is activated.
 
 Selection:
 
@@ -153,6 +158,7 @@ Grid layout:
 - Column count is `ceil(sqrt(profileCount))`.
 - Row count is `ceil(profileCount / columns)`.
 - Each tile is a `TableLayoutPanel` with a compact header and a `WebView2`.
+- `profiles`, `tileControls`, and `webViews` are mutable lists so a profile can be removed during pop-out and the remaining tiles can be reflowed.
 
 Per-tile state:
 
@@ -171,9 +177,24 @@ Initialization flow:
 6. Each profile gets its own WebView2 environment and user data folder.
 7. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, stats menu, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, pop-out button, stats menu, mute button, volume value, and volume slider.
 
 The tile refresh button performs a full WebView recreation rather than a page reload. `RecreateWebViewAsync(...)` closes open stats menus, creates a new `WebView2`, replaces the old control in `webViews`, carries over the current volume, mute, and stats state, attaches audio enforcement, removes and disposes the old control and stats timer, then calls `InitializeWebViewAsync(...)` for the new control. Initial startup and refresh use the same initialization path so WebView2 environment creation, early audio-session setup, saved audio application, stats overlay setup, and navigation stay consistent.
+
+The tile pop-out button removes that profile from the source `MultiViewForm`, disposes the source tile's `WebView2`, reflows the remaining grid, updates the source window title/icon/tray identity, and raises `ProfilePoppedOut`. `ProfilePickerForm` handles that event by removing the profile ID from the source window's ownership set and tracking a new one-profile `MultiViewForm` for the same profile ID. This keeps the duplicate-open guard intact while moving the profile to a separate browser window.
+
+Pop-out intentionally recreates the WebView in the destination window instead of reparenting the existing WebView control. The source WebView is disposed before the destination `MultiViewForm` initializes its WebView2 environment for the same profile folder, avoiding simultaneous WebView2 access to one user data folder. Cookies, sign-in state, saved audio settings, saved stats settings, screenshots, and WebView mode are preserved through profile storage, but the active page loads again in the new window.
+
+Drag-to-combine uses the same safe transfer model in the opposite direction. A source window listens for native move messages (`WM_ENTERSIZEMOVE`, `WM_MOVING`, and `WM_EXITSIZEMOVE`). While the window is being moved, `FindDragCombineTarget(...)` checks visible non-tray `MultiViewForm` grid bounds under the cursor and rejects targets that already contain any source profile ID. The target window highlights its title text while it is a valid drop target. `GetDropInsertIndex(...)` computes the hovered insertion position from a virtual grid that includes a pending block sized to the source profile count. The hover preview is painted by `DropAdornerForm`, a lightweight owned no-activate overlay window above the grid, without clearing, reparenting, invalidating, or relaying out live WebView2 controls in the target grid; this avoids drag-enter and drag-leave spikes from HWND-backed browser controls and avoids WebView2 child-window z-order issues. On release, `MoveProfilesToWindowAsync(...)` hides the source window, removes and disposes all source tiles, calls `AddPoppedInProfilesAsync(...)` on the target with the selected insertion index, raises `ProfileMovedToWindow`, focuses the target, and closes the empty source window.
+
+Drag-to-combine moves the whole source window as a contiguous group. A two-profile source dragged into a two-profile target produces a four-profile target with the source profiles inserted together at the hovered position. To move only one profile out of a group, pop out the tile first, then drag the resulting one-profile window into the target.
+
+Stale callback hardening:
+
+- WebView initialization checks form, WebView, and stats-state lifetime after each awaited operation before attaching CoreWebView2 event handlers or configuring the browser.
+- Navigation, stats timer, stats menu, profile usage popup, drag-combine, and single-instance activation callbacks all tolerate controls being disposed or profile ownership being moved before the callback runs.
+- Code that walks parallel `profiles` and `webViews` lists clamps to the shorter list, and profile usage lookups re-check index and WebView lifetime before sampling process stats.
+- Diagnostic sampling is fail-soft: unexpected process, GPU, or script-injection failures are ignored for that tick and display unavailable values instead of escaping timer callbacks.
 
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
 
@@ -393,7 +414,7 @@ The uninstaller removes installed binaries and shortcuts only. It does not remov
 Local installer build:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.6.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.7.0 -SelfContained
 ```
 
 The script writes publish and installer outputs under `artifacts\`, which is ignored by Git.
@@ -401,15 +422,15 @@ The script writes publish and installer outputs under `artifacts\`, which is ign
 GitHub release flow:
 
 1. Commit and push the source changes.
-2. Push a version tag such as `v0.6.0`.
+2. Push a version tag such as `v0.7.0`.
 3. `.github/workflows/release.yml` runs on `windows-latest`.
 4. The workflow restores, builds, installs Inno Setup with Chocolatey, runs `scripts/build-installer.ps1`, creates a portable zip, and publishes both files to a GitHub Release.
 
-Expected release assets for version `0.6.0`:
+Expected release assets for version `0.7.0`:
 
 ```text
-MultiWebViewSetup-0.6.0-win-x64.exe
-MultiWebView-0.6.0-win-x64-portable.zip
+MultiWebViewSetup-0.7.0-win-x64.exe
+MultiWebView-0.7.0-win-x64-portable.zip
 ```
 
 ## Public Repository Notes
@@ -454,3 +475,7 @@ When changing WebView creation, preserve the order:
 This order minimizes the window where Windows can create a WebView2 audio session with the wrong default volume.
 
 When changing tile refresh behavior, keep it aligned with `InitializeWebViewAsync(...)` instead of adding a separate initialization path. Refresh should continue to recreate only the selected tile's `WebView2` while preserving the tile's current audio and stats state.
+
+When changing pop-out behavior, keep the order of operations intact: remove and dispose the source tile, raise `ProfilePoppedOut`, then let `ProfilePickerForm` track the destination window. Do not create a second live WebView2 control for the same profile before the source control has been disposed.
+
+When changing drag-to-combine behavior, keep `MoveProfilesToWindowAsync(...)` as the single transfer path. Source tiles must be removed before the target initializes the moved profiles, and `ProfileMovedToWindow` must fire before the source window closes so picker ownership stays correct.

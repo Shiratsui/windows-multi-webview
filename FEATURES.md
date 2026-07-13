@@ -15,7 +15,7 @@ The profile picker is the main window. It lists saved profiles as cards with sta
 
 Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks.
 
-Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes.
+Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes. The popup header shows the profile name and state above a divider, with metrics below.
 
 ![Profile picker hover usage popup](docs/assets/profile-picker-hover-usage.png)
 
@@ -38,15 +38,27 @@ Profiles can be opened individually or together in a tiled multi-view browser wi
 - full WebView recreation through the refresh button
 - screenshot capture
 - opening the profile folder
+- popping that profile out into its own browser window
 - `STAT` overlay options
 - mute
 - volume
 
 Refreshing a tile recreates that tile's WebView and reuses the same profile data, audio state, and stats settings.
+Popping a tile out closes that tile in the source window, reflows the remaining profiles, and opens the popped profile in a new one-profile browser window. Profile data is preserved, but the page is loaded again because Multi WebView avoids running two WebView2 controls against the same profile folder at the same time.
 
 ![Single-profile browser window](docs/assets/single-profile-browser.png)
 
 ![Four-profile multi-view window](docs/assets/multi-view-four-profiles.png)
+
+## Pop-Out Windows
+
+Use the pop-out button in a tile header when one profile should leave a group without closing the other profiles. The source window stays open with the remaining profiles, unless the popped profile was the last tile. The picker continues to treat the popped profile as open, so its profile card focuses the new browser window instead of opening a duplicate session.
+
+## Drag To Combine
+
+Browser windows can be dragged into another visible browser window. Drag the source window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. A lightweight owned adorner window paints a virtual open block sized to the number of source profiles above the WebView2 surface without moving live WebView2 controls during hover. The source window closes after its profiles are added as contiguous tiles in the target window.
+
+Multi-profile source windows merge as a group, so a two-profile window can be dragged into another two-profile window to create a four-profile window. To move only one profile from a group, pop out that tile first, then drag the one-profile window into the target.
 
 ## Per-Profile WebView Mode
 
