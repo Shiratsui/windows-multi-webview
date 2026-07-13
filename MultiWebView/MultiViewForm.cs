@@ -11,9 +11,19 @@ public sealed class ProfilePoppedOutEventArgs(Profile profile) : EventArgs
     public Profile Profile { get; } = profile;
 }
 
+public sealed class ProfileMovedToWindowEventArgs(Profile profile, MultiViewForm targetWindow) : EventArgs
+{
+    public Profile Profile { get; } = profile;
+
+    public MultiViewForm TargetWindow { get; } = targetWindow;
+}
+
 public sealed class MultiViewForm : Form
 {
     private const int TitleBarHeight = 36;
+    private const int WmMoving = 0x0216;
+    private const int WmEnterSizeMove = 0x0231;
+    private const int WmExitSizeMove = 0x0232;
 
     private readonly List<Profile> profiles;
     private readonly ProfileStore profileStore;
@@ -43,14 +53,20 @@ public sealed class MultiViewForm : Form
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private Rectangle? boundsBeforeTray;
+    private MultiViewForm? dragCombineTarget;
+    private int dragCombineInsertIndex = -1;
+    private int dropInsertIndex = -1;
     private double opacityBeforeTray = 1;
     private bool isKeepRunningInTray;
     private bool isMaximized;
     private bool isPinned;
     private bool isMinimizedToTray;
+    private bool isDragCombineCandidate;
+    private bool isDropHighlighted;
 
     public event EventHandler? TrayStateChanged;
     public event EventHandler<ProfilePoppedOutEventArgs>? ProfilePoppedOut;
+    public event EventHandler<ProfileMovedToWindowEventArgs>? ProfileMovedToWindow;
 
     public bool IsInTray => isMinimizedToTray;
 
@@ -246,6 +262,7 @@ public sealed class MultiViewForm : Form
             Padding = new Padding(4),
             BackColor = Color.Black
         };
+        grid.Paint += (_, e) => DrawDropInsertionMarker(e.Graphics);
 
         for (var row = 0; row < rows; row++)
         {
@@ -555,10 +572,25 @@ public sealed class MultiViewForm : Form
 
     private void PopOutProfile(Profile profile)
     {
+        if (!RemoveProfileTile(profile))
+        {
+            return;
+        }
+
+        ProfilePoppedOut?.Invoke(this, new ProfilePoppedOutEventArgs(profile));
+
+        if (profiles.Count == 0)
+        {
+            Close();
+        }
+    }
+
+    private bool RemoveProfileTile(Profile profile)
+    {
         var index = profiles.FindIndex(item => item.Id == profile.Id);
         if (index < 0 || index >= webViews.Count || index >= tileControls.Count)
         {
-            return;
+            return false;
         }
 
         CloseStatsMenus();
@@ -574,16 +606,14 @@ public sealed class MultiViewForm : Form
         profiles.RemoveAt(index);
         usageSamplesByProfileId.Remove(profile.Id);
 
-        ProfilePoppedOut?.Invoke(this, new ProfilePoppedOutEventArgs(profile));
-
         if (profiles.Count == 0)
         {
-            Close();
-            return;
+            return true;
         }
 
         RebuildGridLayout();
         UpdateWindowIdentity();
+        return true;
     }
 
     private void CleanupWebViewState(WebView2 webView)
@@ -653,6 +683,220 @@ public sealed class MultiViewForm : Form
         {
             titleIcon.Image?.Dispose();
             titleIcon.Image = Icon!.ToBitmap();
+        }
+    }
+
+    public async Task AddPoppedInProfileAsync(Profile profile, int insertIndex)
+    {
+        if (profiles.Any(item => item.Id == profile.Id))
+        {
+            return;
+        }
+
+        insertIndex = Math.Clamp(insertIndex, 0, profiles.Count);
+        profiles.Insert(insertIndex, profile);
+        var tile = CreateTile(profile, out var webView);
+        tileControls.Insert(insertIndex, tile);
+        webViews.Insert(insertIndex, webView);
+        RebuildGridLayout();
+        UpdateWindowIdentity();
+        try
+        {
+            await InitializeWebViewAsync(webView, profile);
+        }
+        catch
+        {
+            RemoveProfileTile(profile);
+            throw;
+        }
+    }
+
+    private bool CanStartDragCombine()
+    {
+        return profiles.Count == 1 && !isMinimizedToTray && WindowState != FormWindowState.Minimized;
+    }
+
+    private bool CanAcceptDraggedProfile(Profile profile)
+    {
+        return !IsDisposed &&
+            Visible &&
+            !isMinimizedToTray &&
+            WindowState != FormWindowState.Minimized &&
+            profiles.All(item => item.Id != profile.Id);
+    }
+
+    private MultiViewForm? FindDragCombineTarget(Point screenPoint)
+    {
+        if (profiles.Count != 1)
+        {
+            return null;
+        }
+
+        var draggedProfile = profiles[0];
+        MultiViewForm? match = null;
+        foreach (Form form in Application.OpenForms)
+        {
+            if (form is not MultiViewForm candidate ||
+                ReferenceEquals(candidate, this) ||
+                !candidate.CanAcceptDraggedProfile(draggedProfile) ||
+                !candidate.Bounds.Contains(screenPoint))
+            {
+                continue;
+            }
+
+            match = candidate;
+        }
+
+        return match;
+    }
+
+    private void UpdateDragCombineTarget(Point screenPoint)
+    {
+        var target = FindDragCombineTarget(screenPoint);
+        if (ReferenceEquals(target, dragCombineTarget))
+        {
+            if (target is not null)
+            {
+                dragCombineInsertIndex = target.GetDropInsertIndex(screenPoint);
+                target.SetDropHighlight(true, dragCombineInsertIndex);
+            }
+
+            return;
+        }
+
+        dragCombineTarget?.SetDropHighlight(false);
+        dragCombineTarget = target;
+        dragCombineInsertIndex = target?.GetDropInsertIndex(screenPoint) ?? -1;
+        dragCombineTarget?.SetDropHighlight(true, dragCombineInsertIndex);
+    }
+
+    private void ClearDragCombineTarget()
+    {
+        dragCombineTarget?.SetDropHighlight(false);
+        dragCombineTarget = null;
+        dragCombineInsertIndex = -1;
+        isDragCombineCandidate = false;
+    }
+
+    private int GetDropInsertIndex(Point screenPoint)
+    {
+        if (tileControls.Count == 0)
+        {
+            return 0;
+        }
+
+        var point = grid.PointToClient(screenPoint);
+        for (var index = 0; index < tileControls.Count; index++)
+        {
+            var bounds = tileControls[index].Bounds;
+            if (!bounds.Contains(point))
+            {
+                continue;
+            }
+
+            var isBefore = point.X < bounds.Left + bounds.Width / 2;
+            return isBefore ? index : index + 1;
+        }
+
+        var nearestIndex = 0;
+        var nearestDistance = double.MaxValue;
+        for (var index = 0; index < tileControls.Count; index++)
+        {
+            var bounds = tileControls[index].Bounds;
+            var center = new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
+            var distance = Math.Pow(point.X - center.X, 2) + Math.Pow(point.Y - center.Y, 2);
+            if (distance >= nearestDistance)
+            {
+                continue;
+            }
+
+            nearestDistance = distance;
+            nearestIndex = index;
+        }
+
+        var nearestBounds = tileControls[nearestIndex].Bounds;
+        return point.X < nearestBounds.Left + nearestBounds.Width / 2
+            ? nearestIndex
+            : nearestIndex + 1;
+    }
+
+    private void SetDropHighlight(bool highlighted, int insertIndex = -1)
+    {
+        insertIndex = highlighted ? Math.Clamp(insertIndex, 0, tileControls.Count) : -1;
+        if (grid is null || isDropHighlighted == highlighted && dropInsertIndex == insertIndex)
+        {
+            return;
+        }
+
+        isDropHighlighted = highlighted;
+        dropInsertIndex = insertIndex;
+        grid.Padding = highlighted ? new Padding(10) : new Padding(4);
+        grid.BackColor = highlighted ? Color.FromArgb(35, 105, 170) : Color.Black;
+        titleLabel.BackColor = highlighted ? Color.FromArgb(25, 70, 115) : btnNormal;
+        titleLabel.Text = highlighted ? $"{Text}  -  release to combine" : Text;
+        grid.Invalidate();
+        Invalidate();
+    }
+
+    private void DrawDropInsertionMarker(Graphics graphics)
+    {
+        if (!isDropHighlighted || dropInsertIndex < 0 || tileControls.Count == 0)
+        {
+            return;
+        }
+
+        var markerBounds = GetInsertionMarkerBounds(dropInsertIndex);
+        using var markerBrush = new SolidBrush(Color.FromArgb(80, 180, 255));
+        using var markerPen = new Pen(Color.FromArgb(170, 220, 255), 2F);
+        graphics.FillRectangle(markerBrush, markerBounds);
+        graphics.DrawRectangle(markerPen, markerBounds);
+    }
+
+    private Rectangle GetInsertionMarkerBounds(int insertIndex)
+    {
+        insertIndex = Math.Clamp(insertIndex, 0, tileControls.Count);
+        var referenceIndex = Math.Min(insertIndex, tileControls.Count - 1);
+        var referenceBounds = tileControls[referenceIndex].Bounds;
+        var markerX = insertIndex == tileControls.Count
+            ? referenceBounds.Right - 3
+            : referenceBounds.Left - 3;
+
+        return new Rectangle(markerX, referenceBounds.Top + 8, 6, Math.Max(18, referenceBounds.Height - 16));
+    }
+
+    private async Task MoveSingleProfileToWindowAsync(MultiViewForm targetWindow)
+    {
+        if (profiles.Count != 1 || !targetWindow.CanAcceptDraggedProfile(profiles[0]))
+        {
+            return;
+        }
+
+        var profile = profiles[0];
+        var insertIndex = dragCombineInsertIndex >= 0
+            ? dragCombineInsertIndex
+            : targetWindow.GetDropInsertIndex(Cursor.Position);
+        if (!RemoveProfileTile(profile))
+        {
+            return;
+        }
+
+        Hide();
+        ShowInTaskbar = false;
+
+        try
+        {
+            await targetWindow.AddPoppedInProfileAsync(profile, insertIndex);
+            ProfileMovedToWindow?.Invoke(this, new ProfileMovedToWindowEventArgs(profile, targetWindow));
+            targetWindow.ActivateFromProfilePicker();
+            Close();
+        }
+        catch
+        {
+            await AddPoppedInProfileAsync(profile, 0);
+            ShowInTaskbar = true;
+            Show();
+            Activate();
+            BringToFront();
         }
     }
 
@@ -1338,6 +1582,29 @@ public sealed class MultiViewForm : Form
             () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
             () => profile.Name);
         webView.Source = new Uri(profile.StartUrl);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmEnterSizeMove)
+        {
+            isDragCombineCandidate = CanStartDragCombine();
+        }
+        else if (m.Msg == WmMoving && isDragCombineCandidate)
+        {
+            UpdateDragCombineTarget(Cursor.Position);
+        }
+        else if (m.Msg == WmExitSizeMove && isDragCombineCandidate)
+        {
+            var target = dragCombineTarget ?? FindDragCombineTarget(Cursor.Position);
+            ClearDragCombineTarget();
+            if (target is not null)
+            {
+                BeginInvoke(async () => await MoveSingleProfileToWindowAsync(target));
+            }
+        }
+
+        base.WndProc(ref m);
     }
 
     private void AttachTitleBarDrag(Control control)

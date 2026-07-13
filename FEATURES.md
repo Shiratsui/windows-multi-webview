@@ -54,6 +54,12 @@ Popping a tile out closes that tile in the source window, reflows the remaining 
 
 Use the pop-out button in a tile header when one profile should leave a group without closing the other profiles. The source window stays open with the remaining profiles, unless the popped profile was the last tile. The picker continues to treat the popped profile as open, so its profile card focuses the new browser window instead of opening a duplicate session.
 
+## Drag To Combine
+
+One-profile browser windows can be dragged back into another visible browser window. Drag the one-profile window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The blue insertion marker shows where the profile will be added. The source window closes after the profile is added as a tile in the target window.
+
+Only one-profile windows act as drag-combine sources. Multi-profile windows keep normal drag behavior; pop out the profile you want to move first, then drag that one-profile window into the target.
+
 ## Per-Profile WebView Mode
 
 Closed profiles can be switched between `GPU` and `DEF` from the profile card.

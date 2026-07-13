@@ -118,6 +118,7 @@ Responsibilities:
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
 - Transfer profile ownership when a tile is popped out into a new one-profile `MultiViewForm`.
+- Transfer profile ownership when a one-profile `MultiViewForm` is dragged into another browser window.
 - Show a live dark hover popup for open profile cards with CPU, memory, GPU, and GPU memory values sampled from the owning `MultiViewForm`.
 - Open newly created profiles in one-tile `MultiViewForm` windows.
 - Open selected profiles together in tiled `MultiViewForm` windows.
@@ -131,6 +132,8 @@ Open profile tracking:
 - `TrackOpenWindow()` adds profile IDs and their owning window when a window opens.
 - The window `FormClosed` handler removes those IDs and refreshes the picker.
 - `TrackOpenWindow(...)` keeps a mutable ownership set for each window. When `MultiViewForm.ProfilePoppedOut` fires, the popped profile ID is removed from the source window's set before the new one-profile window is tracked. This prevents the source window's later `FormClosed` cleanup from incorrectly marking the popped profile as closed.
+- When `MultiViewForm.ProfileMovedToWindow` fires after drag-to-combine, `TrackOpenWindow(...)` removes the moved profile ID from the source window's ownership set, adds it to the target window's set, and updates `openProfileWindows[profileId]` to the target. The source window then closes empty without releasing the moved profile.
+- Profile cards are reused by profile ID during `LoadProfiles()`. State-only changes update existing card labels, badges, colors, and button states in place instead of clearing and recreating the full `FlowLayoutPanel`, which avoids visible blinking during open/tray/keep-running transitions.
 - Profile cards render a state chip: grey `OFF`, green `OPEN`, or orange `TRAY`. If the owning `MultiViewForm` is currently in keep-running tray mode, the card also shows a red `KEEP RUNNING` chip. `TrackOpenWindow(...)` subscribes to `MultiViewForm.TrayStateChanged` so cards refresh when tray mode changes. Open cards disable their edit and delete buttons and call `ActivateOpenProfileWindow(...)` when clicked, which uses `MultiViewForm.ActivateFromProfilePicker()` to restore tray-hidden windows, restore taskbar-minimized windows, and bring visible windows forward.
 - Hovering an open profile card shows a borderless dark popup owned by the picker. The popup updates once per second by calling `MultiViewForm.GetProfileUsageAsync(profileId)` on the owning browser window, then hides when the pointer leaves the card, the picker is sent to tray, or the card is activated.
 
@@ -181,6 +184,10 @@ The tile refresh button performs a full WebView recreation rather than a page re
 The tile pop-out button removes that profile from the source `MultiViewForm`, disposes the source tile's `WebView2`, reflows the remaining grid, updates the source window title/icon/tray identity, and raises `ProfilePoppedOut`. `ProfilePickerForm` handles that event by removing the profile ID from the source window's ownership set and tracking a new one-profile `MultiViewForm` for the same profile ID. This keeps the duplicate-open guard intact while moving the profile to a separate browser window.
 
 Pop-out intentionally recreates the WebView in the destination window instead of reparenting the existing WebView control. The source WebView is disposed before the destination `MultiViewForm` initializes its WebView2 environment for the same profile folder, avoiding simultaneous WebView2 access to one user data folder. Cookies, sign-in state, saved audio settings, saved stats settings, screenshots, and WebView mode are preserved through profile storage, but the active page loads again in the new window.
+
+Drag-to-combine uses the same safe transfer model in the opposite direction. A one-profile source window listens for native move messages (`WM_ENTERSIZEMOVE`, `WM_MOVING`, and `WM_EXITSIZEMOVE`). While the window is being moved, `FindDragCombineTarget(...)` checks visible non-tray `MultiViewForm` bounds under the cursor. The target window highlights its grid and title text while it is a valid drop target. `GetDropInsertIndex(...)` computes the hovered insertion position from the target tile under the cursor, and the target grid paints a blue insertion marker. On release, `MoveSingleProfileToWindowAsync(...)` removes and disposes the source tile, hides the source window, calls `AddPoppedInProfileAsync(...)` on the target with the selected insertion index, raises `ProfileMovedToWindow`, focuses the target, and closes the empty source window.
+
+Drag-to-combine is intentionally limited to source windows with exactly one profile. Multi-profile windows remain normal draggable windows because dragging an entire grouped browser window into another window would be ambiguous. To move one profile out of a group and into another group, pop out the tile first, then drag the resulting one-profile window into the target.
 
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
 
@@ -463,3 +470,5 @@ This order minimizes the window where Windows can create a WebView2 audio sessio
 When changing tile refresh behavior, keep it aligned with `InitializeWebViewAsync(...)` instead of adding a separate initialization path. Refresh should continue to recreate only the selected tile's `WebView2` while preserving the tile's current audio and stats state.
 
 When changing pop-out behavior, keep the order of operations intact: remove and dispose the source tile, raise `ProfilePoppedOut`, then let `ProfilePickerForm` track the destination window. Do not create a second live WebView2 control for the same profile before the source control has been disposed.
+
+When changing drag-to-combine behavior, keep `MoveSingleProfileToWindowAsync(...)` as the single transfer path. The source tile must be removed before the target initializes the moved profile, and `ProfileMovedToWindow` must fire before the source window closes so picker ownership stays correct.

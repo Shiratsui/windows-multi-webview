@@ -12,9 +12,11 @@ public sealed class ProfilePickerForm : Form
     private readonly HashSet<string> selectedProfileIds = [];
     private readonly HashSet<string> openProfileIds = [];
     private readonly Dictionary<string, Panel> profileCards = [];
+    private readonly Dictionary<string, ProfileCardView> profileCardViews = [];
     private readonly Dictionary<string, MultiViewForm> openProfileWindows = [];
+    private readonly Dictionary<MultiViewForm, HashSet<string>> openProfileIdsByWindow = [];
     private readonly List<Form> openWindows = [];
-    private readonly FlowLayoutPanel profileList = new();
+    private readonly FlowLayoutPanel profileList = new BufferedFlowLayoutPanel();
     private readonly TextBox profileNameTextBox = new();
     private readonly TextBox profileUrlTextBox = new();
     private readonly NotifyIcon trayIcon = new();
@@ -336,27 +338,72 @@ public sealed class ProfilePickerForm : Form
     private void LoadProfiles()
     {
         HideProfileUsagePopup();
-        profileList.Controls.Clear();
-        profileCards.Clear();
+        var profiles = profileStore.LoadProfiles();
+        var profileIds = profiles.Select(profile => profile.Id).ToHashSet();
         selectedProfileIds.RemoveWhere(openProfileIds.Contains);
 
-        foreach (var profile in profileStore.LoadProfiles())
+        profileList.SuspendLayout();
+        try
         {
-            profileList.Controls.Add(CreateProfileCard(profile));
-        }
+            if (profiles.Count == 0)
+            {
+                foreach (var view in profileCardViews.Values)
+                {
+                    view.Card.Dispose();
+                }
 
-        if (profileList.Controls.Count == 0)
+                profileList.Controls.Clear();
+                profileCards.Clear();
+                profileCardViews.Clear();
+                profileList.Controls.Add(CreateEmptyState());
+                return;
+            }
+
+            foreach (Control control in profileList.Controls.Cast<Control>().Where(control => control is not ProfileCardPanel).ToList())
+            {
+                profileList.Controls.Remove(control);
+                control.Dispose();
+            }
+
+            foreach (var id in profileCardViews.Keys.Where(id => !profileIds.Contains(id)).ToList())
+            {
+                if (profileCardViews.TryGetValue(id, out var removedView))
+                {
+                    profileList.Controls.Remove(removedView.Card);
+                    removedView.Card.Dispose();
+                }
+
+                profileCardViews.Remove(id);
+                profileCards.Remove(id);
+            }
+
+            for (var index = 0; index < profiles.Count; index++)
+            {
+                var profile = profiles[index];
+                if (!profileCardViews.TryGetValue(profile.Id, out var view))
+                {
+                    var card = (Panel)CreateProfileCard(profile);
+                    view = profileCardViews[profile.Id];
+                    profileList.Controls.Add(card);
+                }
+
+                UpdateProfileCardView(view, profile);
+                profileList.Controls.SetChildIndex(view.Card, index);
+            }
+        }
+        finally
         {
-            profileList.Controls.Add(CreateEmptyState());
+            profileList.ResumeLayout();
         }
     }
 
     private Control CreateProfileCard(Profile profile)
     {
+        ProfileCardView? view = null;
         var isOpen = IsProfileOpen(profile);
         var isInTray = IsProfileInTray(profile);
         var isKeepRunning = IsProfileKeepRunningInTray(profile);
-        var card = new Panel
+        var card = new ProfileCardPanel
         {
             Width = 224,
             Height = 188,
@@ -365,7 +412,7 @@ public sealed class ProfilePickerForm : Form
             Cursor = Cursors.Hand,
             Tag = profile
         };
-        card.Click += (_, _) => ToggleProfileSelection(profile);
+        card.Click += (_, _) => ToggleProfileSelection(view!.Profile);
         profileCards[profile.Id] = card;
 
         var stateBadge = CreateStatusBadge(
@@ -380,16 +427,19 @@ public sealed class ProfilePickerForm : Form
             profile);
         card.Controls.Add(stateBadge);
 
-        if (isKeepRunning)
+        var keepRunningBadge = CreateStatusBadge(
+            "KEEP RUNNING",
+            Color.FromArgb(176, 58, 58),
+            104,
+            new Point(10, 36),
+            profile,
+            7.5F);
+        keepRunningBadge.Visible = isKeepRunning;
+        card.Controls.Add(keepRunningBadge);
+
+        if (!isKeepRunning)
         {
-            var keepRunningBadge = CreateStatusBadge(
-                "KEEP RUNNING",
-                Color.FromArgb(176, 58, 58),
-                104,
-                new Point(10, 36),
-                profile,
-                7.5F);
-            card.Controls.Add(keepRunningBadge);
+            keepRunningBadge.SendToBack();
         }
 
         var avatar = new AvatarControl(GetInitials(profile.Name))
@@ -400,7 +450,7 @@ public sealed class ProfilePickerForm : Form
             Location = new Point(83, 68),
             Cursor = Cursors.Hand
         };
-        avatar.Click += (_, _) => ToggleProfileSelection(profile);
+        avatar.Click += (_, _) => ToggleProfileSelection(view!.Profile);
         card.Controls.Add(avatar);
 
         var name = new Label
@@ -414,7 +464,7 @@ public sealed class ProfilePickerForm : Form
             Location = new Point(22, 132),
             Cursor = Cursors.Hand
         };
-        name.Click += (_, _) => ToggleProfileSelection(profile);
+        name.Click += (_, _) => ToggleProfileSelection(view!.Profile);
         card.Controls.Add(name);
 
         var lastUsed = new Label
@@ -432,7 +482,7 @@ public sealed class ProfilePickerForm : Form
             Location = new Point(12, 158),
             Cursor = Cursors.Hand
         };
-        lastUsed.Click += (_, _) => ToggleProfileSelection(profile);
+        lastUsed.Click += (_, _) => ToggleProfileSelection(view!.Profile);
         card.Controls.Add(lastUsed);
 
         var editButton = new Button
@@ -454,12 +504,12 @@ public sealed class ProfilePickerForm : Form
         editButton.FlatAppearance.MouseDownBackColor = editButton.BackColor;
         editButton.Click += (_, _) =>
         {
-            if (isOpen)
+            if (IsProfileOpen(view!.Profile))
             {
                 return;
             }
 
-            EditProfile(profile);
+            EditProfile(view.Profile);
         };
         card.Controls.Add(editButton);
 
@@ -482,12 +532,12 @@ public sealed class ProfilePickerForm : Form
         deleteButton.FlatAppearance.MouseDownBackColor = deleteButton.BackColor;
         deleteButton.Click += (_, _) =>
         {
-            if (isOpen)
+            if (IsProfileOpen(view!.Profile))
             {
                 return;
             }
 
-            DeleteProfile(profile);
+            DeleteProfile(view.Profile);
         };
         card.Controls.Add(deleteButton);
 
@@ -520,42 +570,124 @@ public sealed class ProfilePickerForm : Form
         webViewModeButton.FlatAppearance.MouseDownBackColor = webViewModeButton.BackColor;
         webViewModeButton.Click += (_, _) =>
         {
-            if (isOpen)
+            if (IsProfileOpen(view!.Profile))
             {
                 return;
             }
 
-            ToggleProfileWebViewMode(profile);
+            ToggleProfileWebViewMode(view.Profile);
         };
         card.Controls.Add(webViewModeButton);
 
         card.MouseEnter += (_, _) =>
         {
-            if (IsProfileOpen(profile))
+            if (IsProfileOpen(view!.Profile))
             {
-                ShowProfileUsagePopup(profile, card);
+                ShowProfileUsagePopup(view.Profile, card);
             }
-            else if (!selectedProfileIds.Contains(profile.Id))
+            else if (!selectedProfileIds.Contains(view.Profile.Id))
             {
                 card.BackColor = profileCardHover;
             }
         };
-        card.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(profile, card);
+        card.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(view!.Profile, card);
         foreach (Control child in card.Controls)
         {
             child.MouseEnter += (_, _) =>
             {
-                if (IsProfileOpen(profile))
+                if (IsProfileOpen(view!.Profile))
                 {
-                    ShowProfileUsagePopup(profile, card);
+                    ShowProfileUsagePopup(view.Profile, card);
                 }
             };
-            child.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(profile, card);
+            child.MouseLeave += (_, _) => ScheduleProfileUsagePopupHide(view!.Profile, card);
         }
 
-        UpdateProfileCardSelection(profile);
+        view = new ProfileCardView(
+            profile,
+            card,
+            stateBadge,
+            keepRunningBadge,
+            avatar,
+            name,
+            lastUsed,
+            editButton,
+            deleteButton,
+            webViewModeButton);
+        card.Tag = view;
+        profileCardViews[profile.Id] = view;
+        UpdateProfileCardView(view, profile);
 
         return card;
+    }
+
+    private void UpdateProfileCardView(ProfileCardView view, Profile profile)
+    {
+        view.Profile = profile;
+        view.Card.Tag = view;
+
+        var isOpen = IsProfileOpen(profile);
+        var isInTray = IsProfileInTray(profile);
+        var isKeepRunning = IsProfileKeepRunningInTray(profile);
+        view.Card.BackColor = isOpen ? profileCardOpen : selectedProfileIds.Contains(profile.Id) ? profileCardSelected : profileCardNormal;
+        view.Card.Cursor = Cursors.Hand;
+
+        view.StateBadge.Text = isOpen ? isInTray ? "TRAY" : "OPEN" : "OFF";
+        view.StateBadge.BackColor = isOpen
+            ? isInTray ? Color.FromArgb(198, 104, 35) : Color.FromArgb(34, 139, 94)
+            : Color.FromArgb(82, 82, 82);
+        view.StateBadge.Width = isInTray ? 52 : 54;
+
+        view.KeepRunningBadge.Visible = isKeepRunning;
+        if (isKeepRunning)
+        {
+            view.KeepRunningBadge.BringToFront();
+        }
+
+        view.Avatar.Text = GetInitials(profile.Name);
+        view.Avatar.BackColor = isOpen ? Color.FromArgb(42, 112, 84) : Color.FromArgb(70, 70, 70);
+        view.Avatar.Invalidate();
+
+        view.NameLabel.Text = profile.Name;
+        view.LastUsedLabel.Text = isOpen
+            ? isInTray
+                ? $"Tray - last used {profile.LastUsedAt.LocalDateTime:g}"
+                : $"Open - last used {profile.LastUsedAt.LocalDateTime:g}"
+            : $"Last used {profile.LastUsedAt.LocalDateTime:g}";
+        view.LastUsedLabel.ForeColor = isOpen ? Color.FromArgb(173, 220, 193) : Color.FromArgb(155, 155, 155);
+
+        ApplyProfileActionState(view.EditButton, isOpen, Color.FromArgb(45, 45, 45), Color.FromArgb(48, 48, 48));
+        ApplyProfileActionState(view.DeleteButton, isOpen, Color.FromArgb(75, 35, 35), Color.FromArgb(64, 47, 47));
+
+        view.WebViewModeButton.Text = profile.UseHighGpuWebViewArguments ? "GPU" : "DEF";
+        view.WebViewModeButton.BackColor = isOpen
+            ? profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(36, 55, 76)
+                : Color.FromArgb(48, 48, 48)
+            : profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(42, 72, 112)
+                : Color.FromArgb(45, 45, 45);
+        view.WebViewModeButton.ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White;
+        view.WebViewModeButton.Cursor = isOpen ? Cursors.No : Cursors.Hand;
+        view.WebViewModeButton.FlatAppearance.BorderColor = isOpen
+            ? profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(72, 98, 128)
+                : Color.FromArgb(82, 82, 82)
+            : profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(78, 120, 170)
+                : Color.FromArgb(75, 75, 75);
+        view.WebViewModeButton.FlatAppearance.MouseOverBackColor = view.WebViewModeButton.BackColor;
+        view.WebViewModeButton.FlatAppearance.MouseDownBackColor = view.WebViewModeButton.BackColor;
+    }
+
+    private static void ApplyProfileActionState(Button button, bool isOpen, Color closedBackColor, Color openBackColor)
+    {
+        button.BackColor = isOpen ? openBackColor : closedBackColor;
+        button.ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White;
+        button.Cursor = isOpen ? Cursors.No : Cursors.Hand;
+        button.FlatAppearance.BorderColor = isOpen ? Color.FromArgb(82, 82, 82) : Color.FromArgb(75, 75, 75);
+        button.FlatAppearance.MouseOverBackColor = button.BackColor;
+        button.FlatAppearance.MouseDownBackColor = button.BackColor;
     }
 
     private Label CreateStatusBadge(
@@ -1013,6 +1145,7 @@ public sealed class ProfilePickerForm : Form
     private void TrackOpenWindow(MultiViewForm window, IEnumerable<string> profileIds)
     {
         var ids = profileIds.ToHashSet();
+        openProfileIdsByWindow[window] = ids;
         foreach (var id in ids)
         {
             openProfileIds.Add(id);
@@ -1030,6 +1163,21 @@ public sealed class ProfilePickerForm : Form
             UpdateMultiViewButton();
         };
 
+        window.ProfileMovedToWindow += (_, args) =>
+        {
+            ids.Remove(args.Profile.Id);
+            if (openProfileIdsByWindow.TryGetValue(args.TargetWindow, out var targetIds))
+            {
+                targetIds.Add(args.Profile.Id);
+            }
+
+            openProfileIds.Add(args.Profile.Id);
+            selectedProfileIds.Remove(args.Profile.Id);
+            openProfileWindows[args.Profile.Id] = args.TargetWindow;
+            LoadProfiles();
+            UpdateMultiViewButton();
+        };
+
         window.ProfilePoppedOut += (_, args) =>
         {
             ids.Remove(args.Profile.Id);
@@ -1043,6 +1191,7 @@ public sealed class ProfilePickerForm : Form
         window.FormClosed += (_, _) =>
         {
             openWindows.Remove(window);
+            openProfileIdsByWindow.Remove(window);
             foreach (var id in ids)
             {
                 openProfileIds.Remove(id);
@@ -1539,6 +1688,57 @@ public sealed class ProfilePickerForm : Form
     }
 
     private readonly record struct ProfileEditResult(string Name, string StartUrl);
+
+    private sealed class ProfileCardView(
+        Profile profile,
+        Panel card,
+        Label stateBadge,
+        Label keepRunningBadge,
+        AvatarControl avatar,
+        Label nameLabel,
+        Label lastUsedLabel,
+        Button editButton,
+        Button deleteButton,
+        Button webViewModeButton)
+    {
+        public Profile Profile { get; set; } = profile;
+
+        public Panel Card { get; } = card;
+
+        public Label StateBadge { get; } = stateBadge;
+
+        public Label KeepRunningBadge { get; } = keepRunningBadge;
+
+        public AvatarControl Avatar { get; } = avatar;
+
+        public Label NameLabel { get; } = nameLabel;
+
+        public Label LastUsedLabel { get; } = lastUsedLabel;
+
+        public Button EditButton { get; } = editButton;
+
+        public Button DeleteButton { get; } = deleteButton;
+
+        public Button WebViewModeButton { get; } = webViewModeButton;
+    }
+
+    private sealed class ProfileCardPanel : Panel
+    {
+        public ProfileCardPanel()
+        {
+            DoubleBuffered = true;
+            ResizeRedraw = true;
+        }
+    }
+
+    private sealed class BufferedFlowLayoutPanel : FlowLayoutPanel
+    {
+        public BufferedFlowLayoutPanel()
+        {
+            DoubleBuffered = true;
+            ResizeRedraw = true;
+        }
+    }
 
     private sealed class AvatarControl : Control
     {
