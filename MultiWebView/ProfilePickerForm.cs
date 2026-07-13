@@ -870,7 +870,7 @@ public sealed class ProfilePickerForm : Form
 
     private void ScheduleProfileUsagePopupHide(Profile profile, Panel card)
     {
-        BeginInvoke((MethodInvoker)(() =>
+        SafeBeginInvoke(() =>
         {
             if (hoveredOpenProfile?.Id == profile.Id && hoveredOpenProfileCard == card && IsMouseOverControl(card))
             {
@@ -883,7 +883,7 @@ public sealed class ProfilePickerForm : Form
             }
 
             HideProfileUsagePopup();
-        }));
+        });
     }
 
     private async Task UpdateProfileUsagePopupAsync()
@@ -903,7 +903,12 @@ public sealed class ProfilePickerForm : Form
         try
         {
             var snapshot = await window.GetProfileUsageAsync(profile.Id);
-            if (snapshot is null)
+            if (snapshot is null || profileUsagePopup is null || profileUsagePopup.IsDisposed)
+            {
+                return;
+            }
+
+            if (hoveredOpenProfile?.Id != profile.Id)
             {
                 return;
             }
@@ -918,6 +923,28 @@ public sealed class ProfilePickerForm : Form
         finally
         {
             isUpdatingProfileUsage = false;
+        }
+    }
+
+    private void SafeBeginInvoke(Action action)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke((MethodInvoker)(() =>
+            {
+                if (!IsDisposed)
+                {
+                    action();
+                }
+            }));
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 

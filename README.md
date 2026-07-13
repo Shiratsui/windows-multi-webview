@@ -88,7 +88,7 @@ installer\MultiWebView.iss
 To build the installer locally, install Inno Setup 6, then run:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.6.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.7.0 -SelfContained
 ```
 
 Outputs are written under:
@@ -107,7 +107,7 @@ The release workflow is defined at:
 .github\workflows\release.yml
 ```
 
-The workflow runs when a version tag such as `v0.6.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
+The workflow runs when a version tag such as `v0.7.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
 
 Before releasing, review the working tree, stage the intended source and documentation changes, then commit and push:
 
@@ -127,8 +127,8 @@ git push origin master
 Create and push a release tag:
 
 ```powershell
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 After pushing the tag:
@@ -143,18 +143,18 @@ After pushing the tag:
 Expected release assets:
 
 ```text
-MultiWebViewSetup-0.6.0-win-x64.exe
-MultiWebView-0.6.0-win-x64-portable.zip
+MultiWebViewSetup-0.7.0-win-x64.exe
+MultiWebView-0.7.0-win-x64-portable.zip
 ```
 
 For the next release, use a higher version tag:
 
 ```powershell
-git tag v0.6.1
-git push origin v0.6.1
+git tag v0.7.1
+git push origin v0.7.1
 ```
 
-You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.6.0`.
+You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.7.0`.
 
 ## Public Repository Checklist
 

@@ -4,6 +4,11 @@ Change notes for Multi WebView releases. Tagged sections describe released versi
 
 ## Unreleased
 
+## v0.7.0
+
+- Hardened delayed WebView, stats, usage popup, drag-combine, and single-instance activation callbacks against stale controls during profile moves, disposal, or shutdown.
+- Prepared release documentation for the `v0.7.0` release.
+
 - Added a per-tile pop-out button that moves a profile from a multi-view window into its own browser window.
 - Reflowed source multi-view windows and updated profile picker ownership tracking after pop-out.
 - Added drag-to-combine for browser windows, with target highlighting and profile ownership transfer into the target window.

@@ -934,13 +934,53 @@ public sealed class MultiViewForm : Form
         var menuFilterAttached = false;
         statsMenus.Add(menu);
 
-        var state = statsByWebView[getWebView()];
-        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (webView, checkedValue) => statsByWebView[webView].ShowFps = checkedValue);
-        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (webView, checkedValue) => statsByWebView[webView].ShowCpu = checkedValue);
-        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (webView, checkedValue) => statsByWebView[webView].ShowMemory = checkedValue);
-        var gpuItem = CreateStatsMenuItem("GPU", state.ShowGpu, (webView, checkedValue) => statsByWebView[webView].ShowGpu = checkedValue);
-        var gpuMemoryItem = CreateStatsMenuItem("GPU VRAM", state.ShowGpuMemory, (webView, checkedValue) => statsByWebView[webView].ShowGpuMemory = checkedValue);
-        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (webView, checkedValue) => statsByWebView[webView].IsHorizontal = checkedValue);
+        if (!statsByWebView.TryGetValue(getWebView(), out var state))
+        {
+            return;
+        }
+
+        var fpsItem = CreateStatsMenuItem("FPS", state.ShowFps, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.ShowFps = checkedValue;
+            }
+        });
+        var cpuItem = CreateStatsMenuItem("CPU", state.ShowCpu, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.ShowCpu = checkedValue;
+            }
+        });
+        var memoryItem = CreateStatsMenuItem("Memory", state.ShowMemory, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.ShowMemory = checkedValue;
+            }
+        });
+        var gpuItem = CreateStatsMenuItem("GPU", state.ShowGpu, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.ShowGpu = checkedValue;
+            }
+        });
+        var gpuMemoryItem = CreateStatsMenuItem("GPU VRAM", state.ShowGpuMemory, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.ShowGpuMemory = checkedValue;
+            }
+        });
+        var horizontalItem = CreateStatsMenuItem("Horizontal", state.IsHorizontal, (webView, checkedValue) =>
+        {
+            if (statsByWebView.TryGetValue(webView, out var state))
+            {
+                state.IsHorizontal = checkedValue;
+            }
+        });
         statsButton.BackColor = state.AnyEnabled ? btnActive : Color.FromArgb(38, 38, 38);
 
         menu.Items.AddRange([fpsItem, cpuItem, memoryItem, gpuItem, gpuMemoryItem, horizontalItem]);
@@ -1083,6 +1123,9 @@ public sealed class MultiViewForm : Form
             var snapshot = await CreateStatsSnapshotAsync(webView, state);
             await ExecuteStatsScriptAsync(webView, CreateStatsOverlayScript(snapshot));
         }
+        catch
+        {
+        }
         finally
         {
             state.IsRefreshing = false;
@@ -1221,7 +1264,16 @@ public sealed class MultiViewForm : Form
         }
 
         var profile = profiles[index];
-        var processIds = GetWebView2ProcessIds(webView);
+        HashSet<int> processIds;
+        try
+        {
+            processIds = GetWebView2ProcessIds(webView);
+        }
+        catch
+        {
+            return null;
+        }
+
         if (!usageSamplesByProfileId.TryGetValue(profileId, out var sampleState))
         {
             sampleState = new ProfileUsageSampleState();
@@ -1229,13 +1281,21 @@ public sealed class MultiViewForm : Form
         }
 
         SampleProcessIds(processIds, sampleState, out var cpuText, out var memoryText);
-        var gpuSnapshot = await Task.Run(() => GpuStatsSampler.Sample(processIds));
-        var gpuText = gpuSnapshot.HasGpuUtilization
-            ? $"{Math.Clamp(gpuSnapshot.GpuUtilizationPercent, 0, 999):0}%"
-            : "--";
-        var gpuMemoryText = gpuSnapshot.HasGpuMemory
-            ? $"{gpuSnapshot.GpuMemoryBytes / 1024d / 1024d:0} MB"
-            : "--";
+        var gpuText = "--";
+        var gpuMemoryText = "--";
+        try
+        {
+            var gpuSnapshot = await Task.Run(() => GpuStatsSampler.Sample(processIds));
+            gpuText = gpuSnapshot.HasGpuUtilization
+                ? $"{Math.Clamp(gpuSnapshot.GpuUtilizationPercent, 0, 999):0}%"
+                : "--";
+            gpuMemoryText = gpuSnapshot.HasGpuMemory
+                ? $"{gpuSnapshot.GpuMemoryBytes / 1024d / 1024d:0} MB"
+                : "--";
+        }
+        catch
+        {
+        }
 
         return new ProfileUsageSnapshot(
             profile.Name,
@@ -1587,7 +1647,8 @@ public sealed class MultiViewForm : Form
 
     private async Task InitializeWebViewsAsync()
     {
-        for (var index = 0; index < webViews.Count; index++)
+        var count = Math.Min(webViews.Count, profiles.Count);
+        for (var index = 0; index < count; index++)
         {
             await InitializeWebViewAsync(webViews[index], profiles[index]);
         }
@@ -1595,15 +1656,35 @@ public sealed class MultiViewForm : Form
 
     private async Task InitializeWebViewAsync(WebView2 webView, Profile profile)
     {
+        if (IsDisposed || webView.IsDisposed)
+        {
+            return;
+        }
+
         var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
         var environment = await WebViewEnvironmentFactory.CreateAsync(
             userDataFolder,
             profile.UseHighGpuWebViewArguments);
 
+        if (IsDisposed || webView.IsDisposed || !statsByWebView.ContainsKey(webView))
+        {
+            return;
+        }
+
         await webView.EnsureCoreWebView2Async(environment);
+        if (IsDisposed || webView.IsDisposed || webView.CoreWebView2 is null || !statsByWebView.ContainsKey(webView))
+        {
+            return;
+        }
+
         environmentsByWebView[webView] = environment;
         webView.CoreWebView2.WebMessageReceived += (_, args) =>
         {
+            if (IsDisposed || webView.IsDisposed)
+            {
+                return;
+            }
+
             if (args.TryGetWebMessageAsString() == "__multi_webview_close_stats_menu")
             {
                 CloseStatsMenus();
@@ -1611,15 +1692,29 @@ public sealed class MultiViewForm : Form
         };
         webView.CoreWebView2.NavigationCompleted += async (_, _) =>
         {
+            if (IsDisposed || webView.IsDisposed || webView.CoreWebView2 is null)
+            {
+                return;
+            }
+
             if (statsByWebView.GetValueOrDefault(webView)?.AnyEnabled == true)
             {
                 await RefreshStatsOverlayAsync(webView);
                 EnsureStatsTimer(webView);
             }
 
-            await InstallStatsMenuCloseHandlersAsync(webView);
+            if (!webView.IsDisposed && webView.CoreWebView2 is not null)
+            {
+                await InstallStatsMenuCloseHandlersAsync(webView);
+            }
         };
-        webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) => CloseStatsMenus();
+        webView.CoreWebView2.ContainsFullScreenElementChanged += (_, _) =>
+        {
+            if (!IsDisposed && !webView.IsDisposed)
+            {
+                CloseStatsMenus();
+            }
+        };
         await WebViewVolumeController.EnsureAudioSessionAsync(webView);
         await WebViewVolumeController.ConfigureAsync(
             webView,
@@ -1651,7 +1746,7 @@ public sealed class MultiViewForm : Form
             ClearDragCombineTarget();
             if (target is not null)
             {
-                BeginInvoke(async () => await MoveProfilesToWindowAsync(target));
+                SafeBeginInvoke(async () => await MoveProfilesToWindowAsync(target));
             }
         }
 
@@ -1664,6 +1759,30 @@ public sealed class MultiViewForm : Form
         control.MouseMove += TitleBarMouseMove;
         control.MouseUp += TitleBarMouseUp;
         control.MouseDoubleClick += TitleBarMouseDoubleClick;
+    }
+
+    private void SafeBeginInvoke(Func<Task> action)
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke(async () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                await action();
+            });
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private sealed class DropAdornerForm : Form
@@ -2164,9 +2283,15 @@ public sealed class MultiViewForm : Form
 
     private async Task ApplyTrayMuteStateAsync(bool muted)
     {
-        for (var index = 0; index < webViews.Count; index++)
+        var count = Math.Min(webViews.Count, profiles.Count);
+        for (var index = 0; index < count; index++)
         {
             var webView = webViews[index];
+            if (webView.IsDisposed)
+            {
+                continue;
+            }
+
             var profile = profiles[index];
             var effectiveMuted = muted || mutedByWebView.GetValueOrDefault(webView);
 

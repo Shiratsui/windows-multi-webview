@@ -185,9 +185,16 @@ The tile pop-out button removes that profile from the source `MultiViewForm`, di
 
 Pop-out intentionally recreates the WebView in the destination window instead of reparenting the existing WebView control. The source WebView is disposed before the destination `MultiViewForm` initializes its WebView2 environment for the same profile folder, avoiding simultaneous WebView2 access to one user data folder. Cookies, sign-in state, saved audio settings, saved stats settings, screenshots, and WebView mode are preserved through profile storage, but the active page loads again in the new window.
 
-Drag-to-combine uses the same safe transfer model in the opposite direction. A source window listens for native move messages (`WM_ENTERSIZEMOVE`, `WM_MOVING`, and `WM_EXITSIZEMOVE`). While the window is being moved, `FindDragCombineTarget(...)` checks visible non-tray `MultiViewForm` grid bounds under the cursor and rejects targets that already contain any source profile ID. The target window highlights its title text while it is a valid drop target. `GetDropInsertIndex(...)` computes the hovered insertion position from a virtual grid that includes a pending block sized to the source profile count. The hover preview is painted by `DropAdornerForm`, a lightweight owned no-activate overlay window above the grid, without clearing, reparenting, invalidating, or relaying out live WebView2 controls; this avoids drag-enter and drag-leave spikes from HWND-backed browser controls and avoids WebView2 child-window z-order issues. On release, `MoveProfilesToWindowAsync(...)` hides the source window, removes and disposes all source tiles, calls `AddPoppedInProfilesAsync(...)` on the target with the selected insertion index, raises `ProfileMovedToWindow`, focuses the target, and closes the empty source window.
+Drag-to-combine uses the same safe transfer model in the opposite direction. A source window listens for native move messages (`WM_ENTERSIZEMOVE`, `WM_MOVING`, and `WM_EXITSIZEMOVE`). While the window is being moved, `FindDragCombineTarget(...)` checks visible non-tray `MultiViewForm` grid bounds under the cursor and rejects targets that already contain any source profile ID. The target window highlights its title text while it is a valid drop target. `GetDropInsertIndex(...)` computes the hovered insertion position from a virtual grid that includes a pending block sized to the source profile count. The hover preview is painted by `DropAdornerForm`, a lightweight owned no-activate overlay window above the grid, without clearing, reparenting, invalidating, or relaying out live WebView2 controls in the target grid; this avoids drag-enter and drag-leave spikes from HWND-backed browser controls and avoids WebView2 child-window z-order issues. On release, `MoveProfilesToWindowAsync(...)` hides the source window, removes and disposes all source tiles, calls `AddPoppedInProfilesAsync(...)` on the target with the selected insertion index, raises `ProfileMovedToWindow`, focuses the target, and closes the empty source window.
 
 Drag-to-combine moves the whole source window as a contiguous group. A two-profile source dragged into a two-profile target produces a four-profile target with the source profiles inserted together at the hovered position. To move only one profile out of a group, pop out the tile first, then drag the resulting one-profile window into the target.
+
+Stale callback hardening:
+
+- WebView initialization checks form, WebView, and stats-state lifetime after each awaited operation before attaching CoreWebView2 event handlers or configuring the browser.
+- Navigation, stats timer, stats menu, profile usage popup, drag-combine, and single-instance activation callbacks all tolerate controls being disposed or profile ownership being moved before the callback runs.
+- Code that walks parallel `profiles` and `webViews` lists clamps to the shorter list, and profile usage lookups re-check index and WebView lifetime before sampling process stats.
+- Diagnostic sampling is fail-soft: unexpected process, GPU, or script-injection failures are ignored for that tick and display unavailable values instead of escaping timer callbacks.
 
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
 
@@ -407,7 +414,7 @@ The uninstaller removes installed binaries and shortcuts only. It does not remov
 Local installer build:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.6.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.7.0 -SelfContained
 ```
 
 The script writes publish and installer outputs under `artifacts\`, which is ignored by Git.
@@ -415,15 +422,15 @@ The script writes publish and installer outputs under `artifacts\`, which is ign
 GitHub release flow:
 
 1. Commit and push the source changes.
-2. Push a version tag such as `v0.6.0`.
+2. Push a version tag such as `v0.7.0`.
 3. `.github/workflows/release.yml` runs on `windows-latest`.
 4. The workflow restores, builds, installs Inno Setup with Chocolatey, runs `scripts/build-installer.ps1`, creates a portable zip, and publishes both files to a GitHub Release.
 
-Expected release assets for version `0.6.0`:
+Expected release assets for version `0.7.0`:
 
 ```text
-MultiWebViewSetup-0.6.0-win-x64.exe
-MultiWebView-0.6.0-win-x64-portable.zip
+MultiWebViewSetup-0.7.0-win-x64.exe
+MultiWebView-0.7.0-win-x64-portable.zip
 ```
 
 ## Public Repository Notes
