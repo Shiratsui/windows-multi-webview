@@ -632,9 +632,18 @@ public sealed class MultiViewForm : Form
 
     private void RebuildGridLayout()
     {
-        var count = Math.Max(1, tileControls.Count);
+        RebuildGridLayout(dropPreviewIndex: null);
+    }
+
+    private void RebuildGridLayout(int? dropPreviewIndex)
+    {
+        var layoutCount = tileControls.Count + (dropPreviewIndex is null ? 0 : 1);
+        var count = Math.Max(1, layoutCount);
         var columns = (int)Math.Ceiling(Math.Sqrt(count));
         var rows = (int)Math.Ceiling(count / (double)columns);
+        var previewIndex = dropPreviewIndex is null
+            ? -1
+            : Math.Clamp(dropPreviewIndex.Value, 0, tileControls.Count);
 
         grid.SuspendLayout();
         try
@@ -657,7 +666,8 @@ public sealed class MultiViewForm : Form
 
             for (var index = 0; index < tileControls.Count; index++)
             {
-                grid.Controls.Add(tileControls[index], index % columns, index / columns);
+                var layoutIndex = previewIndex >= 0 && index >= previewIndex ? index + 1 : index;
+                grid.Controls.Add(tileControls[index], layoutIndex % columns, layoutIndex / columns);
             }
         }
         finally
@@ -739,7 +749,7 @@ public sealed class MultiViewForm : Form
             if (form is not MultiViewForm candidate ||
                 ReferenceEquals(candidate, this) ||
                 !candidate.CanAcceptDraggedProfile(draggedProfile) ||
-                !candidate.Bounds.Contains(screenPoint))
+                !candidate.GetGridScreenBounds().Contains(screenPoint))
             {
                 continue;
             }
@@ -785,39 +795,12 @@ public sealed class MultiViewForm : Form
             return 0;
         }
 
-        var point = grid.PointToClient(screenPoint);
-        for (var index = 0; index < tileControls.Count; index++)
-        {
-            var bounds = tileControls[index].Bounds;
-            if (!bounds.Contains(point))
-            {
-                continue;
-            }
-
-            var isBefore = point.X < bounds.Left + bounds.Width / 2;
-            return isBefore ? index : index + 1;
-        }
-
-        var nearestIndex = 0;
-        var nearestDistance = double.MaxValue;
-        for (var index = 0; index < tileControls.Count; index++)
-        {
-            var bounds = tileControls[index].Bounds;
-            var center = new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
-            var distance = Math.Pow(point.X - center.X, 2) + Math.Pow(point.Y - center.Y, 2);
-            if (distance >= nearestDistance)
-            {
-                continue;
-            }
-
-            nearestDistance = distance;
-            nearestIndex = index;
-        }
-
-        var nearestBounds = tileControls[nearestIndex].Bounds;
-        return point.X < nearestBounds.Left + nearestBounds.Width / 2
-            ? nearestIndex
-            : nearestIndex + 1;
+        var point = ClampPointToGrid(grid.PointToClient(screenPoint));
+        var layoutCount = Math.Max(1, tileControls.Count + 1);
+        var columns = (int)Math.Ceiling(Math.Sqrt(layoutCount));
+        var rows = (int)Math.Ceiling(layoutCount / (double)columns);
+        var cell = GetGridCellFromPoint(point, rows, columns);
+        return Math.Clamp(cell.Row * columns + cell.Column, 0, tileControls.Count);
     }
 
     private void SetDropHighlight(bool highlighted, int insertIndex = -1)
@@ -830,17 +813,18 @@ public sealed class MultiViewForm : Form
 
         isDropHighlighted = highlighted;
         dropInsertIndex = insertIndex;
-        grid.Padding = highlighted ? new Padding(10) : new Padding(4);
+        grid.Padding = highlighted ? new Padding(8) : new Padding(4);
         grid.BackColor = highlighted ? Color.FromArgb(35, 105, 170) : Color.Black;
         titleLabel.BackColor = highlighted ? Color.FromArgb(25, 70, 115) : btnNormal;
         titleLabel.Text = highlighted ? $"{Text}  -  release to combine" : Text;
+        RebuildGridLayout(highlighted ? insertIndex : null);
         grid.Invalidate();
         Invalidate();
     }
 
     private void DrawDropInsertionMarker(Graphics graphics)
     {
-        if (!isDropHighlighted || dropInsertIndex < 0 || tileControls.Count == 0)
+        if (!isDropHighlighted || dropInsertIndex < 0)
         {
             return;
         }
@@ -855,13 +839,55 @@ public sealed class MultiViewForm : Form
     private Rectangle GetInsertionMarkerBounds(int insertIndex)
     {
         insertIndex = Math.Clamp(insertIndex, 0, tileControls.Count);
-        var referenceIndex = Math.Min(insertIndex, tileControls.Count - 1);
-        var referenceBounds = tileControls[referenceIndex].Bounds;
-        var markerX = insertIndex == tileControls.Count
-            ? referenceBounds.Right - 3
-            : referenceBounds.Left - 3;
+        var columns = Math.Max(1, grid.ColumnCount);
+        var rows = Math.Max(1, grid.RowCount);
+        var row = Math.Min(insertIndex / columns, rows - 1);
+        var column = Math.Min(insertIndex % columns, columns - 1);
+        return InsetRectangle(GetGridCellBounds(row, column), 10);
+    }
 
-        return new Rectangle(markerX, referenceBounds.Top + 8, 6, Math.Max(18, referenceBounds.Height - 16));
+    private (int Row, int Column) GetGridCellFromPoint(Point point, int rows, int columns)
+    {
+        var bounds = grid.DisplayRectangle;
+        var column = bounds.Width <= 0
+            ? 0
+            : Math.Clamp((point.X - bounds.Left) * columns / bounds.Width, 0, columns - 1);
+        var row = bounds.Height <= 0
+            ? 0
+            : Math.Clamp((point.Y - bounds.Top) * rows / bounds.Height, 0, rows - 1);
+        return (row, column);
+    }
+
+    private Rectangle GetGridCellBounds(int row, int column)
+    {
+        var bounds = grid.DisplayRectangle;
+        var columns = Math.Max(1, grid.ColumnCount);
+        var rows = Math.Max(1, grid.RowCount);
+        var left = bounds.Left + bounds.Width * column / columns;
+        var right = bounds.Left + bounds.Width * (column + 1) / columns;
+        var top = bounds.Top + bounds.Height * row / rows;
+        var bottom = bounds.Top + bounds.Height * (row + 1) / rows;
+        return Rectangle.FromLTRB(left, top, right, bottom);
+    }
+
+    private static Rectangle InsetRectangle(Rectangle rectangle, int inset)
+    {
+        var widthInset = Math.Min(inset, Math.Max(0, rectangle.Width / 2 - 1));
+        var heightInset = Math.Min(inset, Math.Max(0, rectangle.Height / 2 - 1));
+        return Rectangle.Inflate(rectangle, -widthInset, -heightInset);
+    }
+
+    private Rectangle GetGridScreenBounds()
+    {
+        return grid.RectangleToScreen(grid.ClientRectangle);
+    }
+
+    private Point ClampPointToGrid(Point point)
+    {
+        var bounds = grid.ClientRectangle;
+        return new Point(
+            Math.Clamp(point.X, bounds.Left, Math.Max(bounds.Left, bounds.Right - 1)),
+            Math.Clamp(point.Y, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - 1)));
     }
 
     private async Task MoveSingleProfileToWindowAsync(MultiViewForm targetWindow)

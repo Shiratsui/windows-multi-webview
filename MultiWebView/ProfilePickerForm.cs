@@ -957,14 +957,14 @@ public sealed class ProfilePickerForm : Form
             ColumnCount = 2,
             BackColor = Color.FromArgb(18, 18, 18)
         };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         profileUsagePopup.Controls.Add(content);
 
         usageTitleLabel = new Label
@@ -976,7 +976,6 @@ public sealed class ProfilePickerForm : Form
             TextAlign = ContentAlignment.MiddleLeft
         };
         content.Controls.Add(usageTitleLabel, 0, 0);
-        content.SetColumnSpan(usageTitleLabel, 2);
 
         usageStateLabel = new Label
         {
@@ -984,10 +983,18 @@ public sealed class ProfilePickerForm : Form
             ForeColor = Color.FromArgb(130, 220, 170),
             Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
             AutoEllipsis = true,
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleRight
         };
-        content.Controls.Add(usageStateLabel, 0, 1);
-        content.SetColumnSpan(usageStateLabel, 2);
+        content.Controls.Add(usageStateLabel, 1, 0);
+
+        var divider = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(64, 64, 64),
+            Margin = Padding.Empty
+        };
+        content.Controls.Add(divider, 0, 1);
+        content.SetColumnSpan(divider, 2);
 
         usageCpuValueLabel = AddUsageRow(content, 2, "CPU", Color.FromArgb(127, 199, 255));
         usageMemoryValueLabel = AddUsageRow(content, 3, "MEM", Color.FromArgb(255, 207, 90));

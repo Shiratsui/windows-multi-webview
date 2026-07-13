@@ -7,7 +7,8 @@ Change notes for Multi WebView releases. Tagged sections describe released versi
 - Added a per-tile pop-out button that moves a profile from a multi-view window into its own browser window.
 - Reflowed source multi-view windows and updated profile picker ownership tracking after pop-out.
 - Added drag-to-combine for one-profile browser windows, with target highlighting and profile ownership transfer into the target window.
-- Added an insertion marker while dragging a one-profile browser window over a target window so the combined tile position can be chosen before release.
+- Added a slide-style drop preview while dragging a one-profile browser window over a target window so the combined tile position can be chosen before release.
+- Updated the profile picker usage popup header to show state on the right with a divider above the metrics.
 - Reduced profile picker blinking by reusing profile cards and updating state changes in place.
 
 ## v0.6.0

@@ -192,7 +192,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 
 Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
 
-Hovering an open profile card shows a compact dark usage popup with live CPU, memory, GPU, and GPU VRAM values for that profile's WebView2 processes.
+Hovering an open profile card shows a compact dark usage popup with live CPU, memory, GPU, and GPU VRAM values for that profile's WebView2 processes. The popup header shows the profile name on the left and the open/tray state on the right, separated from the metric rows by a divider.
 
 ## Pop-Out Windows
 
@@ -202,7 +202,7 @@ After a profile is popped out, the source multi-view window reflows its remainin
 
 ## Drag To Combine
 
-Drag a one-profile browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; the blue marker shows where the profile will be inserted. Multi WebView closes the source WebView first, adds that profile as a new tile in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folder.
+Drag a one-profile browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; the target grid previews the result by sliding existing tiles forward and showing the open slot where the profile will be inserted. Multi WebView closes the source WebView first, adds that profile as a new tile in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folder.
 
 Grouped multi-profile windows still drag normally. To move one profile from a group, pop that tile out first, then drag the one-profile window onto the target browser window.
 

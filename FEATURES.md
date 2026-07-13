@@ -15,7 +15,7 @@ The profile picker is the main window. It lists saved profiles as cards with sta
 
 Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks.
 
-Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes.
+Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes. The popup header shows the profile name and state above a divider, with metrics below.
 
 ![Profile picker hover usage popup](docs/assets/profile-picker-hover-usage.png)
 
@@ -56,7 +56,7 @@ Use the pop-out button in a tile header when one profile should leave a group wi
 
 ## Drag To Combine
 
-One-profile browser windows can be dragged back into another visible browser window. Drag the one-profile window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The blue insertion marker shows where the profile will be added. The source window closes after the profile is added as a tile in the target window.
+One-profile browser windows can be dragged back into another visible browser window. Drag the one-profile window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The target grid previews the result by sliding existing tiles forward and showing the open slot where the profile will be added. The source window closes after the profile is added as a tile in the target window.
 
 Only one-profile windows act as drag-combine sources. Multi-profile windows keep normal drag behavior; pop out the profile you want to move first, then drag that one-profile window into the target.
 
