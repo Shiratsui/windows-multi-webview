@@ -14,6 +14,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Recreate individual WebView tiles from their browser headers when a full WebView refresh is needed.
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
+- Pop an individual profile out of a multi-view window into its own browser window.
 - Show an optional per-tile stats overlay for FPS, render latency, CPU, memory, GPU, and GPU VRAM.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker when they are not currently open.
@@ -182,7 +183,7 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 3. Click `Add profile` to create the profile and open it in a one-profile multi-view window.
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
-6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView. The refresh button recreates that tile's WebView instead of only reloading the current page.
+6. Use the refresh button, screenshot button, profile folder button, pop-out button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView. The refresh button recreates that tile's WebView instead of only reloading the current page.
 7. Use the edit and delete buttons on a profile card to manage saved profiles. These buttons are locked with a blocked cursor while that profile is open.
 8. Use the per-profile `GPU` / `DEF` button under the edit and delete controls to choose whether that profile uses the app's high-GPU/browser-throttling arguments or plain default WebView2 settings. This button is locked with a blocked cursor while the profile is open. The setting is saved per profile and applies when that profile's WebView is created or recreated.
 9. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
@@ -191,6 +192,12 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
 
 Hovering an open profile card shows a compact dark usage popup with live CPU, memory, GPU, and GPU VRAM values for that profile's WebView2 processes.
+
+## Pop-Out Windows
+
+Each WebView tile has a pop-out button that moves that profile into its own one-profile browser window. Pop-out first closes the source tile and then opens the same profile in the new window, so the profile's cookies, sign-in, saved audio state, stats settings, screenshots folder, and WebView mode are preserved. The current page is loaded again in the new WebView instead of live-moving the existing WebView control.
+
+After a profile is popped out, the source multi-view window reflows its remaining tiles and updates its title, taskbar icon, and tray tooltip. The profile picker continues to show the popped profile as open and clicking its card focuses the new window.
 
 ## Stats Overlay
 
@@ -211,7 +218,7 @@ Stats sampling is lightweight but not free. Per-tile stats timers run only while
 
 ## Audio Controls
 
-Each browser header includes a refresh button, mute button, and volume slider. The refresh button destroys and recreates that tile's WebView, then initializes it with the same profile data, audio state, and stats settings. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
+Each browser header includes refresh, screenshot, profile folder, pop-out, stats, mute, and volume controls. The refresh button destroys and recreates that tile's WebView, then initializes it with the same profile data, audio state, and stats settings. The audio setting is saved per profile, so reopening the same profile restores its last volume and mute state.
 
 Volume is applied through the Windows audio session for the WebView2 process tree and is reapplied while the WebView is open. This keeps the saved profile volume and mute state in place even if WebView2 recreates its audio sessions.
 
@@ -257,7 +264,7 @@ Screenshot files use the profile name and local timestamp:
 MultiWebView/
   Program.cs                    App entry point and single-instance activation
   ProfilePickerForm.cs          Main profile picker UI
-  MultiViewForm.cs              Tiled multi-profile browser window
+  MultiViewForm.cs              Tiled multi-profile browser window and pop-out source
   ProfileStore.cs               Profile persistence and storage settings
   WebViewEnvironmentFactory.cs  WebView2 environment options
   WebViewVolumeController.cs    Windows audio session volume control
@@ -275,7 +282,7 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 ## Notes
 
-- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control, which recreates the WebView control and initializes it again for the same profile.
+- Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control, which recreates the WebView control and initializes it again for the same profile, and its own pop-out control, which moves that profile to a separate one-profile browser window.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
 - Each profile card can switch that profile between default WebView2 environments and the app's high-GPU browser arguments for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

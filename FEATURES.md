@@ -38,15 +38,21 @@ Profiles can be opened individually or together in a tiled multi-view browser wi
 - full WebView recreation through the refresh button
 - screenshot capture
 - opening the profile folder
+- popping that profile out into its own browser window
 - `STAT` overlay options
 - mute
 - volume
 
 Refreshing a tile recreates that tile's WebView and reuses the same profile data, audio state, and stats settings.
+Popping a tile out closes that tile in the source window, reflows the remaining profiles, and opens the popped profile in a new one-profile browser window. Profile data is preserved, but the page is loaded again because Multi WebView avoids running two WebView2 controls against the same profile folder at the same time.
 
 ![Single-profile browser window](docs/assets/single-profile-browser.png)
 
 ![Four-profile multi-view window](docs/assets/multi-view-four-profiles.png)
+
+## Pop-Out Windows
+
+Use the pop-out button in a tile header when one profile should leave a group without closing the other profiles. The source window stays open with the remaining profiles, unless the popped profile was the last tile. The picker continues to treat the popped profile as open, so its profile card focuses the new browser window instead of opening a duplicate session.
 
 ## Per-Profile WebView Mode
 

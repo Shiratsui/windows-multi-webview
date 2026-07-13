@@ -6,12 +6,18 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace MultiWebView;
 
+public sealed class ProfilePoppedOutEventArgs(Profile profile) : EventArgs
+{
+    public Profile Profile { get; } = profile;
+}
+
 public sealed class MultiViewForm : Form
 {
     private const int TitleBarHeight = 36;
 
-    private readonly IReadOnlyList<Profile> profiles;
+    private readonly List<Profile> profiles;
     private readonly ProfileStore profileStore;
+    private readonly List<Control> tileControls = [];
     private readonly List<WebView2> webViews = [];
     private readonly Dictionary<WebView2, int> volumeByWebView = [];
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
@@ -30,6 +36,9 @@ public sealed class MultiViewForm : Form
     private Button btnTray = null!;
     private Button btnPin = null!;
     private Button btnMax = null!;
+    private PictureBox titleIcon = null!;
+    private Label titleLabel = null!;
+    private TableLayoutPanel grid = null!;
     private ToolStripMenuItem traySwitchModeItem = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
@@ -41,6 +50,7 @@ public sealed class MultiViewForm : Form
     private bool isMinimizedToTray;
 
     public event EventHandler? TrayStateChanged;
+    public event EventHandler<ProfilePoppedOutEventArgs>? ProfilePoppedOut;
 
     public bool IsInTray => isMinimizedToTray;
 
@@ -57,7 +67,7 @@ public sealed class MultiViewForm : Form
 
     public MultiViewForm(IReadOnlyList<Profile> profiles, ProfileStore profileStore)
     {
-        this.profiles = profiles;
+        this.profiles = profiles.ToList();
         this.profileStore = profileStore;
 
         Text = WindowIdentity.BuildMultiViewTitle(profiles);
@@ -150,7 +160,7 @@ public sealed class MultiViewForm : Form
         AttachTitleBarDrag(titleBar);
         Controls.Add(titleBar);
 
-        var icon = new PictureBox
+        titleIcon = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.StretchImage,
             Image = Icon!.ToBitmap(),
@@ -158,10 +168,10 @@ public sealed class MultiViewForm : Form
             Location = new Point(8, 8)
         };
 
-        AttachTitleBarDrag(icon);
-        titleBar.Controls.Add(icon);
+        AttachTitleBarDrag(titleIcon);
+        titleBar.Controls.Add(titleIcon);
 
-        var title = new Label
+        titleLabel = new Label
         {
             Text = Text,
             ForeColor = Color.White,
@@ -172,9 +182,9 @@ public sealed class MultiViewForm : Form
             Size = new Size(Math.Max(180, Width - 240), TitleBarHeight),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
-        toolTip.SetToolTip(title, Text);
-        AttachTitleBarDrag(title);
-        titleBar.Controls.Add(title);
+        toolTip.SetToolTip(titleLabel, Text);
+        AttachTitleBarDrag(titleLabel);
+        titleBar.Controls.Add(titleLabel);
 
         btnMin = CreateTitleButton("—", () => WindowState = FormWindowState.Minimized);
         titleBar.Controls.Add(btnMin);
@@ -228,7 +238,7 @@ public sealed class MultiViewForm : Form
         Controls.Add(contentPanel);
         contentPanel.SendToBack();
 
-        var grid = new TableLayoutPanel
+        grid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             RowCount = rows,
@@ -253,6 +263,7 @@ public sealed class MultiViewForm : Form
         {
             var profile = profiles[index];
             var tile = CreateTile(profile, out var webView);
+            tileControls.Add(tile);
             webViews.Add(webView);
             grid.Controls.Add(tile, index % columns, index / columns);
         }
@@ -274,12 +285,13 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 8,
+            ColumnCount = 9,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
             Padding = new Padding(8, 0, 6, 0)
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
@@ -341,6 +353,20 @@ public sealed class MultiViewForm : Form
         toolTip.SetToolTip(folderButton, "Show profile folder");
         header.Controls.Add(folderButton, 3, 0);
 
+        var popOutButton = new Button
+        {
+            Text = "↗",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(38, 38, 38),
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI Symbol", 9F, FontStyle.Bold),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        popOutButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(popOutButton, "Pop out to a separate window");
+        header.Controls.Add(popOutButton, 4, 0);
+
         var fpsButton = new Button
         {
             Text = "STAT",
@@ -353,7 +379,7 @@ public sealed class MultiViewForm : Form
         };
         fpsButton.FlatAppearance.BorderSize = 0;
         toolTip.SetToolTip(fpsButton, "Show stats overlay");
-        header.Controls.Add(fpsButton, 4, 0);
+        header.Controls.Add(fpsButton, 5, 0);
 
         var volumeValue = new Label
         {
@@ -364,7 +390,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 5, 0);
+        header.Controls.Add(volumeValue, 6, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -377,7 +403,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 6, 0);
+        header.Controls.Add(muteButton, 7, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -388,7 +414,7 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 7, 0);
+        header.Controls.Add(volumeSlider, 8, 0);
 
         tile.Controls.Add(header, 0, 0);
 
@@ -436,6 +462,8 @@ public sealed class MultiViewForm : Form
         {
             OpenProfileFolder(profile);
         };
+
+        popOutButton.Click += (_, _) => PopOutProfile(profile);
 
         ConfigureStatsButton(fpsButton, () => tileWebView, profile);
 
@@ -523,6 +551,109 @@ public sealed class MultiViewForm : Form
         tile.Controls.Add(newWebView, 0, 1);
         await InitializeWebViewAsync(newWebView, profile);
         return newWebView;
+    }
+
+    private void PopOutProfile(Profile profile)
+    {
+        var index = profiles.FindIndex(item => item.Id == profile.Id);
+        if (index < 0 || index >= webViews.Count || index >= tileControls.Count)
+        {
+            return;
+        }
+
+        CloseStatsMenus();
+
+        var tile = tileControls[index];
+        var webView = webViews[index];
+        CleanupWebViewState(webView);
+
+        grid.Controls.Remove(tile);
+        tile.Dispose();
+        tileControls.RemoveAt(index);
+        webViews.RemoveAt(index);
+        profiles.RemoveAt(index);
+        usageSamplesByProfileId.Remove(profile.Id);
+
+        ProfilePoppedOut?.Invoke(this, new ProfilePoppedOutEventArgs(profile));
+
+        if (profiles.Count == 0)
+        {
+            Close();
+            return;
+        }
+
+        RebuildGridLayout();
+        UpdateWindowIdentity();
+    }
+
+    private void CleanupWebViewState(WebView2 webView)
+    {
+        if (statsByWebView.TryGetValue(webView, out var state))
+        {
+            state.Timer?.Stop();
+            state.Timer?.Dispose();
+        }
+
+        volumeByWebView.Remove(webView);
+        mutedByWebView.Remove(webView);
+        statsByWebView.Remove(webView);
+        environmentsByWebView.Remove(webView);
+    }
+
+    private void RebuildGridLayout()
+    {
+        var count = Math.Max(1, tileControls.Count);
+        var columns = (int)Math.Ceiling(Math.Sqrt(count));
+        var rows = (int)Math.Ceiling(count / (double)columns);
+
+        grid.SuspendLayout();
+        try
+        {
+            grid.Controls.Clear();
+            grid.RowStyles.Clear();
+            grid.ColumnStyles.Clear();
+            grid.RowCount = rows;
+            grid.ColumnCount = columns;
+
+            for (var row = 0; row < rows; row++)
+            {
+                grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
+            }
+
+            for (var column = 0; column < columns; column++)
+            {
+                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+            }
+
+            for (var index = 0; index < tileControls.Count; index++)
+            {
+                grid.Controls.Add(tileControls[index], index % columns, index / columns);
+            }
+        }
+        finally
+        {
+            grid.ResumeLayout();
+        }
+    }
+
+    private void UpdateWindowIdentity()
+    {
+        Text = WindowIdentity.BuildMultiViewTitle(profiles);
+        SetMultiViewIcon(this, profiles);
+        trayIcon.Text = WindowIdentity.BuildTrayText(Text);
+        trayIcon.Icon = WindowIdentity.CreateMultiViewIcon(profiles);
+
+        if (titleLabel is not null)
+        {
+            titleLabel.Text = Text;
+            toolTip.SetToolTip(titleLabel, Text);
+        }
+
+        if (titleIcon is not null)
+        {
+            titleIcon.Image?.Dispose();
+            titleIcon.Image = Icon!.ToBitmap();
+        }
     }
 
     private void ConfigureStatsButton(Button statsButton, Func<WebView2> getWebView, Profile profile)
@@ -788,7 +919,7 @@ public sealed class MultiViewForm : Form
 
     public async Task<ProfileUsageSnapshot?> GetProfileUsageAsync(string profileId)
     {
-        var index = profiles.ToList().FindIndex(profile => profile.Id == profileId);
+        var index = profiles.FindIndex(profile => profile.Id == profileId);
         if (index < 0 || index >= webViews.Count)
         {
             return null;

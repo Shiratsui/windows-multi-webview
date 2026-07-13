@@ -1012,7 +1012,7 @@ public sealed class ProfilePickerForm : Form
 
     private void TrackOpenWindow(MultiViewForm window, IEnumerable<string> profileIds)
     {
-        var ids = profileIds.ToList();
+        var ids = profileIds.ToHashSet();
         foreach (var id in ids)
         {
             openProfileIds.Add(id);
@@ -1026,6 +1026,16 @@ public sealed class ProfilePickerForm : Form
         openWindows.Add(window);
         window.TrayStateChanged += (_, _) =>
         {
+            LoadProfiles();
+            UpdateMultiViewButton();
+        };
+
+        window.ProfilePoppedOut += (_, args) =>
+        {
+            ids.Remove(args.Profile.Id);
+            var poppedWindow = new MultiViewForm([args.Profile], profileStore);
+            TrackOpenWindow(poppedWindow, [args.Profile.Id]);
+            poppedWindow.Show();
             LoadProfiles();
             UpdateMultiViewButton();
         };

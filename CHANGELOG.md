@@ -4,6 +4,9 @@ Change notes for Multi WebView releases. Tagged sections describe released versi
 
 ## Unreleased
 
+- Added a per-tile pop-out button that moves a profile from a multi-view window into its own browser window.
+- Reflowed source multi-view windows and updated profile picker ownership tracking after pop-out.
+
 ## v0.6.0
 
 - Added a persisted per-profile `GPU` / `DEF` WebView mode toggle on profile cards.
