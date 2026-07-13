@@ -56,7 +56,7 @@ Use the pop-out button in a tile header when one profile should leave a group wi
 
 ## Drag To Combine
 
-Browser windows can be dragged into another visible browser window. Drag the source window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The target grid previews the result by sliding existing tiles forward and showing an open block sized to the number of source profiles. The source window closes after its profiles are added as contiguous tiles in the target window.
+Browser windows can be dragged into another visible browser window. Drag the source window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. A lightweight owned adorner window paints a virtual open block sized to the number of source profiles above the WebView2 surface without moving live WebView2 controls during hover. The source window closes after its profiles are added as contiguous tiles in the target window.
 
 Multi-profile source windows merge as a group, so a two-profile window can be dragged into another two-profile window to create a four-profile window. To move only one profile from a group, pop out that tile first, then drag the one-profile window into the target.
 

@@ -202,7 +202,7 @@ After a profile is popped out, the source multi-view window reflows its remainin
 
 ## Drag To Combine
 
-Drag a browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; the target grid previews the result by sliding existing tiles forward and showing an open block sized to the number of source profiles. Multi WebView closes the source WebViews first, adds those profiles as contiguous tiles in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folders.
+Drag a browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; a lightweight owned adorner window paints a virtual open block sized to the number of source profiles above the WebView2 surface without moving live WebView2 controls during hover. Multi WebView closes the source WebViews first, adds those profiles as contiguous tiles in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folders.
 
 Multi-profile source windows merge as a group. For example, dragging a two-profile window into another two-profile window creates one four-profile window, inserted at the hovered position.
 

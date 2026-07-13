@@ -52,6 +52,7 @@ public sealed class MultiViewForm : Form
     private PictureBox titleIcon = null!;
     private Label titleLabel = null!;
     private TableLayoutPanel grid = null!;
+    private DropAdornerForm dropAdorner = null!;
     private ToolStripMenuItem traySwitchModeItem = null!;
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
@@ -267,8 +268,6 @@ public sealed class MultiViewForm : Form
             Padding = new Padding(4),
             BackColor = Color.Black
         };
-        grid.Paint += (_, e) => DrawDropInsertionMarker(e.Graphics);
-
         for (var row = 0; row < rows; row++)
         {
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
@@ -280,6 +279,7 @@ public sealed class MultiViewForm : Form
         }
 
         contentPanel.Controls.Add(grid);
+        dropAdorner = new DropAdornerForm();
 
         for (var index = 0; index < profiles.Count; index++)
         {
@@ -638,19 +638,9 @@ public sealed class MultiViewForm : Form
 
     private void RebuildGridLayout()
     {
-        RebuildGridLayout(dropPreviewIndex: null, dropPreviewCount: 1);
-    }
-
-    private void RebuildGridLayout(int? dropPreviewIndex, int dropPreviewCount)
-    {
-        dropPreviewCount = Math.Max(1, dropPreviewCount);
-        var layoutCount = tileControls.Count + (dropPreviewIndex is null ? 0 : dropPreviewCount);
-        var count = Math.Max(1, layoutCount);
+        var count = Math.Max(1, tileControls.Count);
         var columns = (int)Math.Ceiling(Math.Sqrt(count));
         var rows = (int)Math.Ceiling(count / (double)columns);
-        var previewIndex = dropPreviewIndex is null
-            ? -1
-            : Math.Clamp(dropPreviewIndex.Value, 0, tileControls.Count);
 
         grid.SuspendLayout();
         try
@@ -673,8 +663,7 @@ public sealed class MultiViewForm : Form
 
             for (var index = 0; index < tileControls.Count; index++)
             {
-                var layoutIndex = previewIndex >= 0 && index >= previewIndex ? index + dropPreviewCount : index;
-                grid.Controls.Add(tileControls[index], layoutIndex % columns, layoutIndex / columns);
+                grid.Controls.Add(tileControls[index], index % columns, index / columns);
             }
         }
         finally
@@ -851,41 +840,16 @@ public sealed class MultiViewForm : Form
         isDropHighlighted = highlighted;
         dropInsertIndex = insertIndex;
         dropInsertCount = insertCount;
-        grid.Padding = highlighted ? new Padding(8) : new Padding(4);
-        grid.BackColor = highlighted ? Color.FromArgb(35, 105, 170) : Color.Black;
         titleLabel.BackColor = highlighted ? Color.FromArgb(25, 70, 115) : btnNormal;
         titleLabel.Text = highlighted ? $"{Text}  -  release to combine" : Text;
-        RebuildGridLayout(highlighted ? insertIndex : null, dropInsertCount);
-        grid.Invalidate();
-        Invalidate();
-    }
-
-    private void DrawDropInsertionMarker(Graphics graphics)
-    {
-        if (!isDropHighlighted || dropInsertIndex < 0)
+        if (highlighted)
         {
-            return;
+            dropAdorner.ShowFor(this, GetGridScreenBounds(), tileControls.Count, dropInsertIndex, dropInsertCount);
         }
-
-        using var markerBrush = new SolidBrush(Color.FromArgb(80, 180, 255));
-        using var markerPen = new Pen(Color.FromArgb(170, 220, 255), 2F);
-        for (var offset = 0; offset < dropInsertCount; offset++)
+        else
         {
-            var markerBounds = GetInsertionMarkerBounds(dropInsertIndex + offset);
-            graphics.FillRectangle(markerBrush, markerBounds);
-            graphics.DrawRectangle(markerPen, markerBounds);
+            dropAdorner.Hide();
         }
-    }
-
-    private Rectangle GetInsertionMarkerBounds(int layoutIndex)
-    {
-        var maxLayoutIndex = Math.Max(0, tileControls.Count + dropInsertCount - 1);
-        layoutIndex = Math.Clamp(layoutIndex, 0, maxLayoutIndex);
-        var columns = Math.Max(1, grid.ColumnCount);
-        var rows = Math.Max(1, grid.RowCount);
-        var row = Math.Min(layoutIndex / columns, rows - 1);
-        var column = Math.Min(layoutIndex % columns, columns - 1);
-        return InsetRectangle(GetGridCellBounds(row, column), 10);
     }
 
     private (int Row, int Column) GetGridCellFromPoint(Point point, int rows, int columns)
@@ -898,25 +862,6 @@ public sealed class MultiViewForm : Form
             ? 0
             : Math.Clamp((point.Y - bounds.Top) * rows / bounds.Height, 0, rows - 1);
         return (row, column);
-    }
-
-    private Rectangle GetGridCellBounds(int row, int column)
-    {
-        var bounds = grid.DisplayRectangle;
-        var columns = Math.Max(1, grid.ColumnCount);
-        var rows = Math.Max(1, grid.RowCount);
-        var left = bounds.Left + bounds.Width * column / columns;
-        var right = bounds.Left + bounds.Width * (column + 1) / columns;
-        var top = bounds.Top + bounds.Height * row / rows;
-        var bottom = bounds.Top + bounds.Height * (row + 1) / rows;
-        return Rectangle.FromLTRB(left, top, right, bottom);
-    }
-
-    private static Rectangle InsetRectangle(Rectangle rectangle, int inset)
-    {
-        var widthInset = Math.Min(inset, Math.Max(0, rectangle.Width / 2 - 1));
-        var heightInset = Math.Min(inset, Math.Max(0, rectangle.Height / 2 - 1));
-        return Rectangle.Inflate(rectangle, -widthInset, -heightInset);
     }
 
     private Rectangle GetGridScreenBounds()
@@ -1721,6 +1666,162 @@ public sealed class MultiViewForm : Form
         control.MouseDoubleClick += TitleBarMouseDoubleClick;
     }
 
+    private sealed class DropAdornerForm : Form
+    {
+        private const int WsExTransparent = 0x20;
+        private const int WsExNoActivate = 0x08000000;
+        private const int WsExToolWindow = 0x80;
+        private const int WmNcHitTest = 0x0084;
+        private const int HtTransparent = -1;
+        private static readonly Color TransparentColor = Color.FromArgb(255, 1, 2, 3);
+
+        private int tileCount;
+        private int insertIndex = -1;
+        private int insertCount = 1;
+        private bool isHighlighted;
+
+        public DropAdornerForm()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            BackColor = TransparentColor;
+            TransparencyKey = TransparentColor;
+            Opacity = 0.62;
+
+            SetStyle(
+                ControlStyles.UserPaint |
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw,
+                true);
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var createParams = base.CreateParams;
+                createParams.ExStyle |= WsExTransparent | WsExNoActivate | WsExToolWindow;
+                return createParams;
+            }
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        public void ShowFor(Form owner, Rectangle screenBounds, int tileCount, int insertIndex, int insertCount)
+        {
+            if (screenBounds.Width <= 0 || screenBounds.Height <= 0)
+            {
+                Hide();
+                return;
+            }
+
+            if (Owner != owner)
+            {
+                Owner = owner;
+            }
+
+            Bounds = screenBounds;
+            SetDropState(true, tileCount, insertIndex, insertCount);
+            if (!Visible)
+            {
+                Show(owner);
+            }
+
+            BringToFront();
+        }
+
+        private void SetDropState(bool highlighted, int tileCount, int insertIndex, int insertCount)
+        {
+            tileCount = Math.Max(0, tileCount);
+            insertCount = highlighted ? Math.Max(1, insertCount) : 1;
+            insertIndex = highlighted ? Math.Clamp(insertIndex, 0, tileCount) : -1;
+
+            if (isHighlighted == highlighted &&
+                this.tileCount == tileCount &&
+                this.insertIndex == insertIndex &&
+                this.insertCount == insertCount)
+            {
+                return;
+            }
+
+            isHighlighted = highlighted;
+            this.tileCount = tileCount;
+            this.insertIndex = insertIndex;
+            this.insertCount = insertCount;
+            Invalidate();
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs pevent)
+        {
+            pevent.Graphics.Clear(TransparentColor);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WmNcHitTest)
+            {
+                m.Result = new IntPtr(HtTransparent);
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!isHighlighted || insertIndex < 0)
+            {
+                return;
+            }
+
+            using var markerBrush = new SolidBrush(Color.FromArgb(96, 80, 180, 255));
+            using var markerPen = new Pen(Color.FromArgb(190, 220, 245, 255), 2F);
+            using var borderPen = new Pen(Color.FromArgb(180, 120, 200, 255), 3F);
+            e.Graphics.DrawRectangle(borderPen, 1, 1, Math.Max(0, Width - 3), Math.Max(0, Height - 3));
+
+            for (var offset = 0; offset < insertCount; offset++)
+            {
+                var markerBounds = GetInsertionMarkerBounds(insertIndex + offset);
+                e.Graphics.FillRectangle(markerBrush, markerBounds);
+                e.Graphics.DrawRectangle(markerPen, markerBounds);
+            }
+        }
+
+        private Rectangle GetInsertionMarkerBounds(int layoutIndex)
+        {
+            var maxLayoutIndex = Math.Max(0, tileCount + insertCount - 1);
+            layoutIndex = Math.Clamp(layoutIndex, 0, maxLayoutIndex);
+            var layoutCount = Math.Max(1, tileCount + insertCount);
+            var columns = (int)Math.Ceiling(Math.Sqrt(layoutCount));
+            var rows = (int)Math.Ceiling(layoutCount / (double)columns);
+            var row = Math.Min(layoutIndex / columns, rows - 1);
+            var column = Math.Min(layoutIndex % columns, columns - 1);
+            return InsetRectangle(GetGridCellBounds(row, column, rows, columns), 10);
+        }
+
+        private Rectangle GetGridCellBounds(int row, int column, int rows, int columns)
+        {
+            var bounds = ClientRectangle;
+            columns = Math.Max(1, columns);
+            rows = Math.Max(1, rows);
+            var left = bounds.Left + bounds.Width * column / columns;
+            var right = bounds.Left + bounds.Width * (column + 1) / columns;
+            var top = bounds.Top + bounds.Height * row / rows;
+            var bottom = bounds.Top + bounds.Height * (row + 1) / rows;
+            return Rectangle.FromLTRB(left, top, right, bottom);
+        }
+
+        private static Rectangle InsetRectangle(Rectangle rectangle, int inset)
+        {
+            var widthInset = Math.Min(inset, Math.Max(0, rectangle.Width / 2 - 1));
+            var heightInset = Math.Min(inset, Math.Max(0, rectangle.Height / 2 - 1));
+            return Rectangle.Inflate(rectangle, -widthInset, -heightInset);
+        }
+    }
+
     private void TitleBarMouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left)
@@ -2138,6 +2239,7 @@ public sealed class MultiViewForm : Form
             toolTip.Dispose();
             trayModeMenu.Dispose();
             trayIcon.Dispose();
+            dropAdorner.Dispose();
         }
 
         base.Dispose(disposing);
