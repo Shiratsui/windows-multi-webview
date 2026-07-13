@@ -1,0 +1,104 @@
+# Features
+
+This document describes the major user-facing Multi WebView features. See `TECHNICAL.md` for implementation details.
+
+## Profile Picker
+
+The profile picker is the main window. It lists saved profiles as cards with state chips:
+
+![Profile picker with closed profiles](docs/assets/profile-picker-closed.png)
+
+- `OFF`: profile is closed and can be selected, edited, deleted, or switched between `GPU` and `DEF`.
+- `OPEN`: profile is already active in a browser window.
+- `TRAY`: profile is active in a browser window that is currently in the tray.
+- `KEEP RUNNING`: the owning browser window is in keep-running tray mode.
+
+Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks.
+
+Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes.
+
+![Profile picker hover usage popup](docs/assets/profile-picker-hover-usage.png)
+
+## Isolated Profiles
+
+Each app profile has its own WebView2 user data folder. Cookies, sign-ins, local storage, screenshots, saved volume, mute state, stats overlay settings, and WebView mode are stored per profile.
+
+By default, profile data is stored under:
+
+```text
+%LOCALAPPDATA%\MultiWebView\Profiles
+```
+
+The profile storage folder can be changed from the picker. Existing app data is not encrypted by Multi WebView, so real profile folders should not be committed or shared publicly.
+
+## Multi-View Windows
+
+Profiles can be opened individually or together in a tiled multi-view browser window. Each tile hosts one WebView2 instance and includes controls for:
+
+- full WebView recreation through the refresh button
+- screenshot capture
+- opening the profile folder
+- `STAT` overlay options
+- mute
+- volume
+
+Refreshing a tile recreates that tile's WebView and reuses the same profile data, audio state, and stats settings.
+
+![Single-profile browser window](docs/assets/single-profile-browser.png)
+
+![Four-profile multi-view window](docs/assets/multi-view-four-profiles.png)
+
+## Per-Profile WebView Mode
+
+Closed profiles can be switched between `GPU` and `DEF` from the profile card.
+
+`GPU` mode creates WebView2 with the app's high-GPU/browser-throttling arguments, including GPU rasterization, zero-copy, ignored GPU blocklist, reduced background throttling, and autoplay-friendly audio-session setup.
+
+`DEF` mode creates a plain default WebView2 environment without those extra arguments.
+
+The setting is saved per profile as `UseHighGpuWebViewArguments`. Already-open WebViews keep the environment they were created with until the tile is refreshed or the profile is closed and reopened.
+
+## Live Diagnostics
+
+Each WebView tile has a `STAT` menu for optional overlay values:
+
+![Single profile with stats menu open](docs/assets/single-profile-stats-menu.png)
+
+- `FPS`
+- `LAT`
+- `CPU`
+- `Memory`
+- `GPU`
+- `GPU VRAM`
+- `Horizontal`
+
+The profile picker also shows a compact usage popup while hovering an open profile card. CPU and memory are sampled from the WebView2 process tree. GPU and GPU VRAM use Windows performance counters and should be treated as approximate diagnostic values.
+
+Stats timers run only while at least one stats option is enabled, and profile-picker usage sampling runs only while hovering an open profile.
+
+## Audio Controls
+
+Volume and mute state are saved per profile. The app applies audio state through WebView2 mute and Windows Core Audio sessions for the WebView2 process tree.
+
+When a WebView initializes, Multi WebView creates an inaudible Web Audio session so Windows Volume Mixer has a session available before a real page starts playing sound.
+
+## Tray Modes
+
+The profile picker can hide to the system tray. Multi-view browser windows have separate tray controls:
+
+- `Default`: hides the window normally to reduce rendering resource use.
+- `Keep running`: keeps the native host window alive offscreen to reduce hidden-window throttling for games, animation-heavy pages, and timer-sensitive pages.
+
+While a multi-view window is in the tray, its WebViews are force-muted at runtime. Restoring the window reapplies each profile's normal mute state.
+
+![Profile picker tray icon menu](docs/assets/profile-picker-tray-icon-menu.png)
+
+## Screenshots
+
+Each WebView tile can save a PNG screenshot of the visible viewport to that profile's `screenshots` folder:
+
+```text
+<AppDataPath>\<profile-id>\screenshots
+```
+
+After capture, the app shows a temporary status popup. Clicking that popup opens the screenshot folder.

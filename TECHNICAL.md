@@ -374,6 +374,11 @@ Installer files:
 - `.github/workflows/ci.yml`: normal build validation for pushes and pull requests.
 - `.github/workflows/release.yml`: tag-driven GitHub Release workflow.
 
+Feature documentation:
+
+- `FEATURES.md`: user-facing major feature guide.
+- `docs/assets/`: cropped screenshots referenced by `FEATURES.md`.
+
 The installer workflow publishes the app as self-contained for `win-x64`, so users do not need to install the .NET runtime separately. The app still requires Microsoft Edge WebView2 Runtime because browser hosting depends on WebView2.
 
 The Inno Setup installer is intentionally per-user:

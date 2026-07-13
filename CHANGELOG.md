@@ -9,6 +9,7 @@ Change notes for Multi WebView releases. Tagged sections describe released versi
 - Added a persisted per-profile `GPU` / `DEF` WebView mode toggle on profile cards.
 - Added high-GPU and default WebView2 environment modes per profile.
 - Kept locked profile-card action buttons visually readable while making edit, delete, and `GPU` / `DEF` actions inert for open profiles.
+- Added a separate `FEATURES.md` major-features guide with screenshots.
 - Updated release documentation for the `v0.6.0` release.
 
 ## v0.5.0

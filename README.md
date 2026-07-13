@@ -25,6 +25,8 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Keep windows on top with the pin button.
 - Single-instance startup: launching the app again focuses the existing picker.
 
+For a fuller feature guide, see `FEATURES.md`.
+
 ## Requirements
 
 - Windows
@@ -264,6 +266,9 @@ MultiWebView/
   WindowIdentity.cs             Runtime window titles and generated window/tray icons
   VolumeSliderControl.cs        Custom-painted volume slider
   Profile.cs                    Profile model
+FEATURES.md                     User-facing feature guide
+docs/
+  assets/                       Screenshots used by FEATURES.md
 ```
 
 See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage behavior, and audio implementation context.
