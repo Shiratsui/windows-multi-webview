@@ -15,7 +15,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Save a PNG screenshot of an individual WebView tile to that profile's `screenshots` folder, with a clickable status popup after capture.
 - Open an individual profile folder from its WebView tile header.
 - Pop an individual profile out of a multi-view window into its own browser window.
-- Drag a one-profile browser window onto another browser window to combine it back into that target window.
+- Drag a browser window onto another browser window to combine all source profiles into that target window.
 - Show an optional per-tile stats overlay for FPS, render latency, CPU, memory, GPU, and GPU VRAM.
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker when they are not currently open.
@@ -202,9 +202,9 @@ After a profile is popped out, the source multi-view window reflows its remainin
 
 ## Drag To Combine
 
-Drag a one-profile browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; the target grid previews the result by sliding existing tiles forward and showing the open slot where the profile will be inserted. Multi WebView closes the source WebView first, adds that profile as a new tile in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folder.
+Drag a browser window by its title bar over another visible browser window and release it when the target highlights. Move over the target tiles to choose the insertion position; the target grid previews the result by sliding existing tiles forward and showing an open block sized to the number of source profiles. Multi WebView closes the source WebViews first, adds those profiles as contiguous tiles in the target window, and closes the now-empty source window. This preserves profile data while avoiding two live WebView2 controls using the same profile folders.
 
-Grouped multi-profile windows still drag normally. To move one profile from a group, pop that tile out first, then drag the one-profile window onto the target browser window.
+Multi-profile source windows merge as a group. For example, dragging a two-profile window into another two-profile window creates one four-profile window, inserted at the hovered position.
 
 ## Stats Overlay
 

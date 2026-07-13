@@ -1172,15 +1172,16 @@ public sealed class ProfilePickerForm : Form
 
         window.ProfileMovedToWindow += (_, args) =>
         {
-            ids.Remove(args.Profile.Id);
-            if (openProfileIdsByWindow.TryGetValue(args.TargetWindow, out var targetIds))
+            openProfileIdsByWindow.TryGetValue(args.TargetWindow, out var targetIds);
+            foreach (var profile in args.Profiles)
             {
-                targetIds.Add(args.Profile.Id);
+                ids.Remove(profile.Id);
+                targetIds?.Add(profile.Id);
+                openProfileIds.Add(profile.Id);
+                selectedProfileIds.Remove(profile.Id);
+                openProfileWindows[profile.Id] = args.TargetWindow;
             }
 
-            openProfileIds.Add(args.Profile.Id);
-            selectedProfileIds.Remove(args.Profile.Id);
-            openProfileWindows[args.Profile.Id] = args.TargetWindow;
             LoadProfiles();
             UpdateMultiViewButton();
         };

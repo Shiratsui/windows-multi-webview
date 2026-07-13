@@ -56,9 +56,9 @@ Use the pop-out button in a tile header when one profile should leave a group wi
 
 ## Drag To Combine
 
-One-profile browser windows can be dragged back into another visible browser window. Drag the one-profile window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The target grid previews the result by sliding existing tiles forward and showing the open slot where the profile will be added. The source window closes after the profile is added as a tile in the target window.
+Browser windows can be dragged into another visible browser window. Drag the source window by its title bar over the target window, move over the target tiles to choose the insertion position, and release when the target highlights. The target grid previews the result by sliding existing tiles forward and showing an open block sized to the number of source profiles. The source window closes after its profiles are added as contiguous tiles in the target window.
 
-Only one-profile windows act as drag-combine sources. Multi-profile windows keep normal drag behavior; pop out the profile you want to move first, then drag that one-profile window into the target.
+Multi-profile source windows merge as a group, so a two-profile window can be dragged into another two-profile window to create a four-profile window. To move only one profile from a group, pop out that tile first, then drag the one-profile window into the target.
 
 ## Per-Profile WebView Mode
 
