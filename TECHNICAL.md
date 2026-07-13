@@ -58,6 +58,7 @@ Current fields:
 - `ShowStatsGpu`: saved stats overlay GPU utilization setting.
 - `ShowStatsGpuMemory`: saved stats overlay GPU memory setting.
 - `ShowStatsHorizontal`: saved stats overlay horizontal layout setting.
+- `UseHighGpuWebViewArguments`: saved per-profile WebView mode. `true` uses the app's high-GPU/browser-throttling arguments; `false` uses plain default WebView2 settings.
 
 The profile ID is used as the persistent folder name and the key for open/selected profile tracking.
 
@@ -111,7 +112,8 @@ WebView2 user data folder:
 Responsibilities:
 
 - Load saved profiles.
-- Create, edit, and delete profiles. Edit and delete actions are disabled for currently open profiles.
+- Create, edit, and delete profiles. Edit and delete actions are locked for currently open profiles.
+- Toggle each closed profile's WebView mode between `GPU` and `DEF`; the mode button is locked while that profile is open.
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
@@ -224,9 +226,9 @@ Multi-view tray behavior:
 
 ## WebView2 Environment
 
-`WebViewEnvironmentFactory` creates a `CoreWebView2Environment` with profile-specific user data.
+`WebViewEnvironmentFactory` creates a `CoreWebView2Environment` with profile-specific user data. `Profile.UseHighGpuWebViewArguments` controls whether the factory passes additional browser arguments or creates a plain default WebView2 environment.
 
-Browser arguments currently configured:
+High-GPU browser arguments currently configured:
 
 - Disable background timer throttling.
 - Disable backgrounding occluded windows.
@@ -238,6 +240,8 @@ Browser arguments currently configured:
 - Disable autoplay user gesture requirements.
 
 The autoplay flag is important for the early silent Web Audio session. Without it, Chromium can suspend the audio context until a user gesture, which would delay Windows Volume Mixer session creation.
+
+Changing a profile card's `GPU` / `DEF` setting affects newly created WebView2 environments for that profile only. Already-open WebViews keep their existing environment until the tile is refreshed or the profile is closed and reopened.
 
 ## Audio Design
 
@@ -384,7 +388,7 @@ The uninstaller removes installed binaries and shortcuts only. It does not remov
 Local installer build:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.4.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.6.0 -SelfContained
 ```
 
 The script writes publish and installer outputs under `artifacts\`, which is ignored by Git.
@@ -392,15 +396,15 @@ The script writes publish and installer outputs under `artifacts\`, which is ign
 GitHub release flow:
 
 1. Commit and push the source changes.
-2. Push a version tag such as `v0.4.0`.
+2. Push a version tag such as `v0.6.0`.
 3. `.github/workflows/release.yml` runs on `windows-latest`.
 4. The workflow restores, builds, installs Inno Setup with Chocolatey, runs `scripts/build-installer.ps1`, creates a portable zip, and publishes both files to a GitHub Release.
 
-Expected release assets for version `0.4.0`:
+Expected release assets for version `0.6.0`:
 
 ```text
-MultiWebViewSetup-0.4.0-win-x64.exe
-MultiWebView-0.4.0-win-x64-portable.zip
+MultiWebViewSetup-0.6.0-win-x64.exe
+MultiWebView-0.6.0-win-x64-portable.zip
 ```
 
 ## Public Repository Notes

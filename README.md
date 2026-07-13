@@ -18,6 +18,7 @@ Multi WebView is a Windows desktop app for opening multiple isolated WebView2 br
 - Control and persist volume and mute state per profile.
 - Edit or delete saved profiles from the profile picker when they are not currently open.
 - Change and open the profile storage folder from the app.
+- Choose `GPU` or `DEF` WebView mode per profile from the profile picker.
 - Close the profile picker to the system tray and restore it from the tray icon.
 - Move multi-view browser windows to the system tray with a dedicated tray button.
 - Choose `Default` or `Keep running` from each multi-view window's tray dropdown before sending it to the tray.
@@ -83,7 +84,7 @@ installer\MultiWebView.iss
 To build the installer locally, install Inno Setup 6, then run:
 
 ```powershell
-.\scripts\build-installer.ps1 -Version 0.4.0 -SelfContained
+.\scripts\build-installer.ps1 -Version 0.6.0 -SelfContained
 ```
 
 Outputs are written under:
@@ -102,7 +103,7 @@ The release workflow is defined at:
 .github\workflows\release.yml
 ```
 
-The workflow runs when a version tag such as `v0.4.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
+The workflow runs when a version tag such as `v0.6.0` is pushed. It builds a self-contained Windows x64 publish, packages an Inno Setup installer, creates a portable zip, and attaches both files to a GitHub Release.
 
 Before releasing, review the working tree, stage the intended source and documentation changes, then commit and push:
 
@@ -122,8 +123,8 @@ git push origin master
 Create and push a release tag:
 
 ```powershell
-git tag v0.4.0
-git push origin v0.4.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 After pushing the tag:
@@ -138,18 +139,18 @@ After pushing the tag:
 Expected release assets:
 
 ```text
-MultiWebViewSetup-0.4.0-win-x64.exe
-MultiWebView-0.4.0-win-x64-portable.zip
+MultiWebViewSetup-0.6.0-win-x64.exe
+MultiWebView-0.6.0-win-x64-portable.zip
 ```
 
 For the next release, use a higher version tag:
 
 ```powershell
-git tag v0.4.1
-git push origin v0.4.1
+git tag v0.6.1
+git push origin v0.6.1
 ```
 
-You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.4.0`.
+You can also run the `Release` workflow manually from GitHub Actions and provide a version such as `0.6.0`.
 
 ## Public Repository Checklist
 
@@ -180,11 +181,12 @@ git ls-files -- MultiWebView/MultiWebView.csproj.user mock profile-picker-render
 4. Click a saved profile card to select it.
 5. Use `Create multi-view` to open selected profiles in one tiled window.
 6. Use the refresh button, screenshot button, profile folder button, `STAT` menu, volume slider, and mute button in each browser header to control that profile's WebView. The refresh button recreates that tile's WebView instead of only reloading the current page.
-7. Use the edit and delete buttons on a profile card to manage saved profiles. These buttons are disabled while that profile is open.
-8. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
-9. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
+7. Use the edit and delete buttons on a profile card to manage saved profiles. These buttons are locked with a blocked cursor while that profile is open.
+8. Use the per-profile `GPU` / `DEF` button under the edit and delete controls to choose whether that profile uses the app's high-GPU/browser-throttling arguments or plain default WebView2 settings. This button is locked with a blocked cursor while the profile is open. The setting is saved per profile and applies when that profile's WebView is created or recreated.
+9. Use the profile picker's close button to hide it to the system tray. Use the tray menu's `Restore` or the tray icon double-click to bring it back. Use `Alt+F4` or tray menu `Exit` to quit.
+10. In a multi-view browser window, use the normal minimize button to minimize to the taskbar. Use the tray dropdown to choose `Default` for normal hidden tray mode or `Keep running` for game-friendly offscreen tray mode. While the window is in the tray, right-click its tray icon and toggle the checked `Keep Running` item without restoring. Double-click its tray icon or use tray menu `Restore` to show it again.
 
-Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, or deleted again until their browser window is closed. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
+Profile cards show a grey `OFF`, green `OPEN`, or orange `TRAY` chip. If the owning browser window is in `Keep running` tray mode, the card also shows a red `KEEP RUNNING` chip. Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks. Clicking an open profile card restores or focuses the existing browser window, including windows minimized to the taskbar or sent to the system tray. Deleting a closed profile uses the app's custom confirmation dialog before removing the saved browser data.
 
 Hovering an open profile card shows a compact dark usage popup with live CPU, memory, GPU, and GPU VRAM values for that profile's WebView2 processes.
 
@@ -231,6 +233,8 @@ The app also stores its settings at:
 
 The last selected multi-view tray mode is saved in this settings file as `KeepWebViewsRunningInTray`. `Keep running` keeps tray windows alive offscreen instead of hiding them, which helps games and animation-heavy pages avoid hidden-window throttling. `Default` hides the window normally to reduce rendering resource use while keeping pages and network activity alive.
 
+Each profile stores its selected WebView mode as `UseHighGpuWebViewArguments`. `GPU` uses additional browser arguments for GPU rasterization, reduced background throttling, and autoplay-friendly audio-session setup. `DEF` creates WebView2 environments without those extra arguments. Existing open WebViews keep the mode they were created with until they are refreshed or reopened.
+
 Each profile has a stable ID, display name, start URL, timestamps, saved audio state, saved stats overlay options, and a dedicated `webview2` user data folder. Use `Change folder` in the app to move future profile metadata and WebView2 data to another directory.
 
 Screenshots are saved automatically under:
@@ -255,6 +259,8 @@ MultiWebView/
   ProfileStore.cs               Profile persistence and storage settings
   WebViewEnvironmentFactory.cs  WebView2 environment options
   WebViewVolumeController.cs    Windows audio session volume control
+  GpuStatsSampler.cs            Windows GPU performance counter sampling
+  ProfileUsageSnapshot.cs       Profile picker live usage snapshot
   WindowIdentity.cs             Runtime window titles and generated window/tray icons
   VolumeSliderControl.cs        Custom-painted volume slider
   Profile.cs                    Profile model
@@ -266,5 +272,5 @@ See `TECHNICAL.md` for deeper architecture notes, lifecycle details, storage beh
 
 - Browser windows use borderless custom title bars with maximize, close, and pin controls where applicable. Multi-view titles include the opened profile names, while the app executable, installer, and Start Menu shortcut still use the packaged app icon. The profile picker close button hides to tray; multi-view windows have separate taskbar-minimize and tray controls. The multi-view tray dropdown offers `Default`, which hides the window normally, and `Keep running`, which keeps the WebView host window alive offscreen so pages are less likely to be throttled as hidden. The multi-view tray icon menu can switch between those modes without restoring the window. `Alt+F4` exits from the picker. Each WebView tile has its own refresh control, which recreates the WebView control and initializes it again for the same profile.
 - WebView2 is created with a profile-specific user data folder so each profile keeps separate cookies, sessions, and local storage.
-- Additional WebView2 browser arguments are configured to reduce background throttling for active multi-window use.
+- Each profile card can switch that profile between default WebView2 environments and the app's high-GPU browser arguments for active multi-window use.
 - Per-profile audio is controlled through Windows Core Audio sessions. A silent Web Audio graph is used only to create the mixer session early.

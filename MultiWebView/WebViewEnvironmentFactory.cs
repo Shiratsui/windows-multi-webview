@@ -4,7 +4,7 @@ namespace MultiWebView;
 
 public static class WebViewEnvironmentFactory
 {
-    private const string BrowserArguments =
+    private const string HighGpuBrowserArguments =
         "--disable-background-timer-throttling " +
         "--disable-backgrounding-occluded-windows " +
         "--disable-renderer-backgrounding " +
@@ -14,12 +14,14 @@ public static class WebViewEnvironmentFactory
         "--ignore-gpu-blocklist " +
         "--autoplay-policy=no-user-gesture-required";
 
-    public static Task<CoreWebView2Environment> CreateAsync(string userDataFolder)
+    public static Task<CoreWebView2Environment> CreateAsync(string userDataFolder, bool useHighGpuArguments)
     {
-        var options = new CoreWebView2EnvironmentOptions
-        {
-            AdditionalBrowserArguments = BrowserArguments
-        };
+        var options = useHighGpuArguments
+            ? new CoreWebView2EnvironmentOptions
+            {
+                AdditionalBrowserArguments = HighGpuBrowserArguments
+            }
+            : null;
 
         return CoreWebView2Environment.CreateAsync(
             userDataFolder: userDataFolder,

@@ -826,6 +826,15 @@ public sealed class MultiViewForm : Form
             gpuMemoryText);
     }
 
+    public void UpdateProfileWebViewMode(string profileId, bool useHighGpuArguments)
+    {
+        var profile = profiles.FirstOrDefault(item => item.Id == profileId);
+        if (profile is not null)
+        {
+            profile.UseHighGpuWebViewArguments = useHighGpuArguments;
+        }
+    }
+
     private static string CreateStatsOverlayScript(object? snapshot)
     {
         if (snapshot is null)
@@ -1167,7 +1176,9 @@ public sealed class MultiViewForm : Form
     private async Task InitializeWebViewAsync(WebView2 webView, Profile profile)
     {
         var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
-        var environment = await WebViewEnvironmentFactory.CreateAsync(userDataFolder);
+        var environment = await WebViewEnvironmentFactory.CreateAsync(
+            userDataFolder,
+            profile.UseHighGpuWebViewArguments);
 
         await webView.EnsureCoreWebView2Async(environment);
         environmentsByWebView[webView] = environment;

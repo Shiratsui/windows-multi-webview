@@ -165,6 +165,25 @@ public sealed class ProfileStore
         SaveProfiles(profiles);
     }
 
+    public void UpdateProfileWebViewMode(Profile selectedProfile, bool useHighGpuArguments)
+    {
+        selectedProfile.UseHighGpuWebViewArguments = useHighGpuArguments;
+
+        var profiles = LoadProfiles().ToList();
+        var profile = profiles.FirstOrDefault(item => item.Id == selectedProfile.Id);
+
+        if (profile is null)
+        {
+            profiles.Add(selectedProfile);
+        }
+        else
+        {
+            profile.UseHighGpuWebViewArguments = useHighGpuArguments;
+        }
+
+        SaveProfiles(profiles);
+    }
+
     public void DeleteProfile(Profile selectedProfile)
     {
         var profiles = LoadProfiles()
@@ -195,20 +214,21 @@ public sealed class ProfileStore
             SaveProfiles([]);
         }
 
-        SaveSettings(new ProfileStoreSettings
-        {
-            ProfilesPath = AppDataPath,
-            KeepWebViewsRunningInTray = KeepWebViewsRunningInTray
-        });
+        SaveCurrentSettings();
     }
 
     public void SetKeepWebViewsRunningInTray(bool enabled)
     {
         KeepWebViewsRunningInTray = enabled;
+        SaveCurrentSettings();
+    }
+
+    private void SaveCurrentSettings()
+    {
         SaveSettings(new ProfileStoreSettings
         {
             ProfilesPath = AppDataPath,
-            KeepWebViewsRunningInTray = enabled
+            KeepWebViewsRunningInTray = KeepWebViewsRunningInTray
         });
     }
 

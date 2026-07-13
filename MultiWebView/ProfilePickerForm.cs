@@ -439,20 +439,26 @@ public sealed class ProfilePickerForm : Form
         {
             Text = "✎",
             FlatStyle = FlatStyle.Flat,
-            BackColor = isOpen ? Color.FromArgb(35, 35, 35) : Color.FromArgb(45, 45, 45),
-            ForeColor = isOpen ? Color.FromArgb(120, 120, 120) : Color.White,
+            BackColor = isOpen ? Color.FromArgb(48, 48, 48) : Color.FromArgb(45, 45, 45),
+            ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White,
             Font = new Font("Segoe UI Symbol", 10F, FontStyle.Bold),
             Size = new Size(30, 26),
             Location = new Point(146, 10),
-            Cursor = isOpen ? Cursors.Default : Cursors.Hand,
-            Enabled = !isOpen
+            Cursor = isOpen ? Cursors.No : Cursors.Hand
         };
         editButton.FlatAppearance.BorderColor = isOpen
-            ? Color.FromArgb(55, 55, 55)
+            ? Color.FromArgb(82, 82, 82)
             : Color.FromArgb(75, 75, 75);
         editButton.FlatAppearance.BorderSize = 1;
+        editButton.FlatAppearance.MouseOverBackColor = editButton.BackColor;
+        editButton.FlatAppearance.MouseDownBackColor = editButton.BackColor;
         editButton.Click += (_, _) =>
         {
+            if (isOpen)
+            {
+                return;
+            }
+
             EditProfile(profile);
         };
         card.Controls.Add(editButton);
@@ -461,23 +467,67 @@ public sealed class ProfilePickerForm : Form
         {
             Text = "🗑",
             FlatStyle = FlatStyle.Flat,
-            BackColor = isOpen ? Color.FromArgb(35, 35, 35) : Color.FromArgb(75, 35, 35),
-            ForeColor = isOpen ? Color.FromArgb(120, 120, 120) : Color.White,
+            BackColor = isOpen ? Color.FromArgb(64, 47, 47) : Color.FromArgb(75, 35, 35),
+            ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White,
             Font = new Font("Segoe UI Symbol", 9F, FontStyle.Bold),
             Size = new Size(30, 26),
             Location = new Point(184, 10),
-            Cursor = isOpen ? Cursors.Default : Cursors.Hand,
-            Enabled = !isOpen
+            Cursor = isOpen ? Cursors.No : Cursors.Hand
         };
         deleteButton.FlatAppearance.BorderColor = isOpen
-            ? Color.FromArgb(55, 55, 55)
+            ? Color.FromArgb(100, 70, 70)
             : Color.FromArgb(120, 55, 55);
         deleteButton.FlatAppearance.BorderSize = 1;
+        deleteButton.FlatAppearance.MouseOverBackColor = deleteButton.BackColor;
+        deleteButton.FlatAppearance.MouseDownBackColor = deleteButton.BackColor;
         deleteButton.Click += (_, _) =>
         {
+            if (isOpen)
+            {
+                return;
+            }
+
             DeleteProfile(profile);
         };
         card.Controls.Add(deleteButton);
+
+        var webViewModeButton = new Button
+        {
+            Text = profile.UseHighGpuWebViewArguments ? "GPU" : "DEF",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = isOpen
+                ? profile.UseHighGpuWebViewArguments
+                    ? Color.FromArgb(36, 55, 76)
+                    : Color.FromArgb(48, 48, 48)
+                : profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(42, 72, 112)
+                : Color.FromArgb(45, 45, 45),
+            ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White,
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            Size = new Size(68, 24),
+            Location = new Point(146, 42),
+            Cursor = isOpen ? Cursors.No : Cursors.Hand
+        };
+        webViewModeButton.FlatAppearance.BorderColor = isOpen
+            ? profile.UseHighGpuWebViewArguments
+                ? Color.FromArgb(72, 98, 128)
+                : Color.FromArgb(82, 82, 82)
+            : profile.UseHighGpuWebViewArguments
+            ? Color.FromArgb(78, 120, 170)
+            : Color.FromArgb(75, 75, 75);
+        webViewModeButton.FlatAppearance.BorderSize = 1;
+        webViewModeButton.FlatAppearance.MouseOverBackColor = webViewModeButton.BackColor;
+        webViewModeButton.FlatAppearance.MouseDownBackColor = webViewModeButton.BackColor;
+        webViewModeButton.Click += (_, _) =>
+        {
+            if (isOpen)
+            {
+                return;
+            }
+
+            ToggleProfileWebViewMode(profile);
+        };
+        card.Controls.Add(webViewModeButton);
 
         card.MouseEnter += (_, _) =>
         {
@@ -578,6 +628,18 @@ public sealed class ProfilePickerForm : Form
             FileName = profileStore.AppDataPath,
             UseShellExecute = true
         });
+    }
+
+    private void ToggleProfileWebViewMode(Profile profile)
+    {
+        var useHighGpuArguments = !profile.UseHighGpuWebViewArguments;
+        profileStore.UpdateProfileWebViewMode(profile, useHighGpuArguments);
+        if (openProfileWindows.TryGetValue(profile.Id, out var window) && !window.IsDisposed)
+        {
+            window.UpdateProfileWebViewMode(profile.Id, useHighGpuArguments);
+        }
+
+        LoadProfiles();
     }
 
     private void EditProfile(Profile profile)

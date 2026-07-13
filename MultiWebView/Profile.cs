@@ -15,4 +15,5 @@ public sealed class Profile
     public bool ShowStatsGpu { get; set; }
     public bool ShowStatsGpuMemory { get; set; }
     public bool ShowStatsHorizontal { get; set; }
+    public bool UseHighGpuWebViewArguments { get; set; } = true;
 }
