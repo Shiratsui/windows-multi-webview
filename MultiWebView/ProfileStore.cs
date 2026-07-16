@@ -165,9 +165,9 @@ public sealed class ProfileStore
         SaveProfiles(profiles);
     }
 
-    public void UpdateProfileWebViewMode(Profile selectedProfile, bool useHighGpuArguments)
+    public void UpdateProfileWebViewMode(Profile selectedProfile, WebViewPerformanceMode mode)
     {
-        selectedProfile.UseHighGpuWebViewArguments = useHighGpuArguments;
+        selectedProfile.SetWebViewMode(mode);
 
         var profiles = LoadProfiles().ToList();
         var profile = profiles.FirstOrDefault(item => item.Id == selectedProfile.Id);
@@ -178,7 +178,7 @@ public sealed class ProfileStore
         }
         else
         {
-            profile.UseHighGpuWebViewArguments = useHighGpuArguments;
+            profile.SetWebViewMode(mode);
         }
 
         SaveProfiles(profiles);
@@ -287,6 +287,14 @@ public sealed class ProfileStore
             if (profile.VolumePercent != normalizedVolume)
             {
                 profile.VolumePercent = normalizedVolume;
+                changed = true;
+            }
+
+            if (profile.WebViewMode is null)
+            {
+                profile.SetWebViewMode(profile.UseHighGpuWebViewArguments
+                    ? WebViewPerformanceMode.Gpu
+                    : WebViewPerformanceMode.Default);
                 changed = true;
             }
         }

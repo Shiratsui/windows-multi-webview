@@ -36,6 +36,9 @@ public sealed class MultiViewForm : Form
     private readonly Dictionary<WebView2, bool> mutedByWebView = [];
     private readonly Dictionary<WebView2, StatsOverlayState> statsByWebView = [];
     private readonly Dictionary<WebView2, CoreWebView2Environment> environmentsByWebView = [];
+    private readonly Dictionary<WebView2, Control> inactiveOverlaysByWebView = [];
+    private readonly Dictionary<string, Button> activeButtonsByProfileId = [];
+    private readonly HashSet<string> inactiveProfileIds = [];
     private readonly Dictionary<string, ProfileUsageSampleState> usageSamplesByProfileId = [];
     private readonly List<ContextMenuStrip> statsMenus = [];
     private readonly ContextMenuStrip trayModeMenu;
@@ -57,6 +60,7 @@ public sealed class MultiViewForm : Form
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private Rectangle? boundsBeforeTray;
+    private FormWindowState windowStateBeforeTray = FormWindowState.Normal;
     private MultiViewForm? dragCombineTarget;
     private int dragCombineInsertIndex = -1;
     private int dropInsertIndex = -1;
@@ -240,7 +244,17 @@ public sealed class MultiViewForm : Form
         btn.FlatAppearance.BorderSize = 0;
         btn.Click += (_, _) => onClick();
         btn.MouseEnter += (_, _) => btn.BackColor = isClose ? btnCloseHover : btnHover;
-        btn.MouseLeave += (_, _) => btn.BackColor = btn == btnPin && isPinned ? btnActive : btnNormal;
+        btn.MouseLeave += (_, _) =>
+        {
+            if (btn == btnPin && isPinned)
+            {
+                btn.BackColor = btnActive;
+            }
+            else
+            {
+                btn.BackColor = btnNormal;
+            }
+        };
 
         return btn;
     }
@@ -307,16 +321,18 @@ public sealed class MultiViewForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 9,
+            ColumnCount = 10,
             RowCount = 1,
             BackColor = Color.FromArgb(28, 28, 28),
             Padding = new Padding(8, 0, 6, 0)
         };
+        header.MouseDown += (_, _) => ActivateProfileTile(profile.Id);
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
@@ -331,6 +347,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Font = new Font("Segoe UI", 9F, FontStyle.Bold)
         };
+        nameLabel.MouseDown += (_, _) => ActivateProfileTile(profile.Id);
         header.Controls.Add(nameLabel, 0, 0);
 
         var refreshButton = new Button
@@ -389,6 +406,21 @@ public sealed class MultiViewForm : Form
         toolTip.SetToolTip(popOutButton, "Pop out to a separate window");
         header.Controls.Add(popOutButton, 4, 0);
 
+        var activeButton = new Button
+        {
+            Text = "ACT",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.White,
+            BackColor = btnActive,
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            Margin = new Padding(2, 0, 2, 0)
+        };
+        activeButton.FlatAppearance.BorderSize = 0;
+        toolTip.SetToolTip(activeButton, "Toggle this tile active or inactive");
+        header.Controls.Add(activeButton, 5, 0);
+        activeButtonsByProfileId[profile.Id] = activeButton;
+
         var fpsButton = new Button
         {
             Text = "STAT",
@@ -401,7 +433,7 @@ public sealed class MultiViewForm : Form
         };
         fpsButton.FlatAppearance.BorderSize = 0;
         toolTip.SetToolTip(fpsButton, "Show stats overlay");
-        header.Controls.Add(fpsButton, 5, 0);
+        header.Controls.Add(fpsButton, 6, 0);
 
         var volumeValue = new Label
         {
@@ -412,7 +444,7 @@ public sealed class MultiViewForm : Form
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font("Segoe UI", 8F, FontStyle.Regular)
         };
-        header.Controls.Add(volumeValue, 6, 0);
+        header.Controls.Add(volumeValue, 7, 0);
 
         var muted = profile.IsMuted;
         var muteButton = new Button
@@ -425,7 +457,7 @@ public sealed class MultiViewForm : Form
             Margin = new Padding(4, 0, 2, 0)
         };
         muteButton.FlatAppearance.BorderSize = 0;
-        header.Controls.Add(muteButton, 7, 0);
+        header.Controls.Add(muteButton, 8, 0);
 
         var volumeSlider = new VolumeSliderControl
         {
@@ -436,12 +468,15 @@ public sealed class MultiViewForm : Form
             Height = 24,
             Margin = new Padding(4, 3, 0, 0)
         };
-        header.Controls.Add(volumeSlider, 8, 0);
+        header.Controls.Add(volumeSlider, 9, 0);
 
         tile.Controls.Add(header, 0, 0);
 
         webView = CreateWebView();
         var tileWebView = webView;
+        var inactiveOverlay = CreateInactiveTileOverlay(profile);
+        inactiveOverlaysByWebView[tileWebView] = inactiveOverlay;
+        activeButton.Click += (_, _) => ToggleProfileTileActive(profile.Id);
         volumeByWebView[tileWebView] = volumeSlider.Value;
         mutedByWebView[tileWebView] = muted;
         statsByWebView[tileWebView] = new StatsOverlayState
@@ -456,7 +491,7 @@ public sealed class MultiViewForm : Form
         WebViewVolumeController.Attach(
             tileWebView,
             () => volumeByWebView.GetValueOrDefault(tileWebView, 100),
-            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(tileWebView),
+            () => IsRuntimeMuted(tileWebView, profile.Id),
             () => profile.Name);
 
         refreshButton.Click += async (_, _) =>
@@ -497,7 +532,7 @@ public sealed class MultiViewForm : Form
             _ = WebViewVolumeController.ApplyAsync(
                 tileWebView,
                 volumeSlider.Value,
-                isMinimizedToTray || muted,
+                IsRuntimeMuted(tileWebView, profile.Id),
                 profile.Name);
         };
 
@@ -511,13 +546,43 @@ public sealed class MultiViewForm : Form
             _ = WebViewVolumeController.ApplyAsync(
                 tileWebView,
                 volumeSlider.Value,
-                isMinimizedToTray || muted,
+                IsRuntimeMuted(tileWebView, profile.Id),
                 profile.Name);
         };
 
         tile.Controls.Add(tileWebView, 0, 1);
+        tile.Controls.Add(inactiveOverlay, 0, 1);
+        inactiveOverlay.BringToFront();
+        ApplyProfileTileActiveVisibility(tileWebView, profile.Id);
 
         return tile;
+    }
+
+    private Control CreateInactiveTileOverlay(Profile profile)
+    {
+        var overlay = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(16, 16, 16),
+            Cursor = Cursors.Hand,
+            Visible = false
+        };
+
+        var label = new Label
+        {
+            Text = $"Inactive - {profile.Name}\r\nClick to activate",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(210, 210, 210),
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            Cursor = Cursors.Hand
+        };
+        label.Click += (_, _) => ActivateProfileTile(profile.Id);
+        overlay.Click += (_, _) => ActivateProfileTile(profile.Id);
+        overlay.Controls.Add(label);
+
+        return overlay;
     }
 
     private static WebView2 CreateWebView()
@@ -542,9 +607,15 @@ public sealed class MultiViewForm : Form
         var oldVolume = volumeByWebView.GetValueOrDefault(oldWebView, Math.Clamp(profile.VolumePercent, 0, 100));
         var oldMuted = mutedByWebView.GetValueOrDefault(oldWebView, profile.IsMuted);
         var oldStats = statsByWebView.GetValueOrDefault(oldWebView);
+        var oldOverlay = inactiveOverlaysByWebView.GetValueOrDefault(oldWebView);
 
         volumeByWebView[newWebView] = oldVolume;
         mutedByWebView[newWebView] = oldMuted;
+        if (oldOverlay is not null)
+        {
+            inactiveOverlaysByWebView[newWebView] = oldOverlay;
+        }
+
         statsByWebView[newWebView] = new StatsOverlayState
         {
             ShowFps = oldStats?.ShowFps ?? profile.ShowStatsFps,
@@ -558,7 +629,7 @@ public sealed class MultiViewForm : Form
         WebViewVolumeController.Attach(
             newWebView,
             () => volumeByWebView.GetValueOrDefault(newWebView, 100),
-            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(newWebView),
+            () => IsRuntimeMuted(newWebView, profile.Id),
             () => profile.Name);
 
         tile.Controls.Remove(oldWebView);
@@ -568,10 +639,13 @@ public sealed class MultiViewForm : Form
         mutedByWebView.Remove(oldWebView);
         statsByWebView.Remove(oldWebView);
         environmentsByWebView.Remove(oldWebView);
+        inactiveOverlaysByWebView.Remove(oldWebView);
         oldWebView.Dispose();
 
         tile.Controls.Add(newWebView, 0, 1);
+        oldOverlay?.BringToFront();
         await InitializeWebViewAsync(newWebView, profile);
+        ApplyProfileTileActiveVisibility(newWebView, profile.Id);
         return newWebView;
     }
 
@@ -610,6 +684,8 @@ public sealed class MultiViewForm : Form
         webViews.RemoveAt(index);
         profiles.RemoveAt(index);
         usageSamplesByProfileId.Remove(profile.Id);
+        inactiveProfileIds.Remove(profile.Id);
+        activeButtonsByProfileId.Remove(profile.Id);
 
         if (profiles.Count == 0 || !updateLayout)
         {
@@ -618,6 +694,7 @@ public sealed class MultiViewForm : Form
 
         RebuildGridLayout();
         UpdateWindowIdentity();
+        ApplyAllProfileTileActiveVisibility();
         return true;
     }
 
@@ -634,6 +711,7 @@ public sealed class MultiViewForm : Form
         mutedByWebView.Remove(webView);
         statsByWebView.Remove(webView);
         environmentsByWebView.Remove(webView);
+        inactiveOverlaysByWebView.Remove(webView);
     }
 
     private void RebuildGridLayout()
@@ -730,6 +808,8 @@ public sealed class MultiViewForm : Form
             {
                 await InitializeWebViewAsync(webViews[insertIndex + offset], sourceProfiles[offset]);
             }
+
+            ApplyAllProfileTileActiveVisibility();
         }
         catch
         {
@@ -1306,12 +1386,12 @@ public sealed class MultiViewForm : Form
             gpuMemoryText);
     }
 
-    public void UpdateProfileWebViewMode(string profileId, bool useHighGpuArguments)
+    public void UpdateProfileWebViewMode(string profileId, WebViewPerformanceMode mode)
     {
         var profile = profiles.FirstOrDefault(item => item.Id == profileId);
         if (profile is not null)
         {
-            profile.UseHighGpuWebViewArguments = useHighGpuArguments;
+            profile.SetWebViewMode(mode);
         }
     }
 
@@ -1652,6 +1732,8 @@ public sealed class MultiViewForm : Form
         {
             await InitializeWebViewAsync(webViews[index], profiles[index]);
         }
+
+        ApplyAllProfileTileActiveVisibility();
     }
 
     private async Task InitializeWebViewAsync(WebView2 webView, Profile profile)
@@ -1664,7 +1746,7 @@ public sealed class MultiViewForm : Form
         var userDataFolder = profileStore.GetWebViewUserDataFolder(profile);
         var environment = await WebViewEnvironmentFactory.CreateAsync(
             userDataFolder,
-            profile.UseHighGpuWebViewArguments);
+            profile.GetWebViewMode());
 
         if (IsDisposed || webView.IsDisposed || !statsByWebView.ContainsKey(webView))
         {
@@ -1678,6 +1760,7 @@ public sealed class MultiViewForm : Form
         }
 
         environmentsByWebView[webView] = environment;
+        ApplyProfileTileActiveVisibility(webView, profile.Id);
         webView.CoreWebView2.WebMessageReceived += (_, args) =>
         {
             if (IsDisposed || webView.IsDisposed)
@@ -1719,13 +1802,19 @@ public sealed class MultiViewForm : Form
         await WebViewVolumeController.ConfigureAsync(
             webView,
             () => volumeByWebView.GetValueOrDefault(webView, 100),
-            () => isMinimizedToTray || mutedByWebView.GetValueOrDefault(webView),
+            () => IsRuntimeMuted(webView, profile.Id),
             () => profile.Name);
         webView.Source = new Uri(profile.StartUrl);
     }
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == BorderlessMaximizeHelper.WmGetMinMaxInfo)
+        {
+            BorderlessMaximizeHelper.ApplyWorkingAreaMaxBounds(this, ref m);
+            return;
+        }
+
         if (m.Msg == WmEnterSizeMove)
         {
             isDragCombineCandidate = CanStartDragCombine();
@@ -1751,6 +1840,22 @@ public sealed class MultiViewForm : Form
         }
 
         base.WndProc(ref m);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+
+        if (WindowState == FormWindowState.Maximized)
+        {
+            isMaximized = true;
+            UpdateMaxButtonIcon();
+        }
+        else if (WindowState == FormWindowState.Normal && isMaximized)
+        {
+            isMaximized = false;
+            UpdateMaxButtonIcon();
+        }
     }
 
     private void AttachTitleBarDrag(Control control)
@@ -1995,11 +2100,15 @@ public sealed class MultiViewForm : Form
         if (isMaximized)
         {
             var mouseScreen = Cursor.Position;
-            var width = previousBounds.Width;
-            var height = previousBounds.Height;
+            var restoreBounds = previousBounds.Width > 0 && previousBounds.Height > 0
+                ? previousBounds
+                : RestoreBounds;
+            var width = restoreBounds.Width > 0 ? restoreBounds.Width : Width;
+            var height = restoreBounds.Height > 0 ? restoreBounds.Height : Height;
             var newX = mouseScreen.X - width / 2;
             var newY = mouseScreen.Y - 15;
 
+            WindowState = FormWindowState.Normal;
             Bounds = new Rectangle(newX, newY, width, height);
             isMaximized = false;
             UpdateMaxButtonIcon();
@@ -2013,13 +2122,13 @@ public sealed class MultiViewForm : Form
     {
         if (isMaximized)
         {
-            Bounds = previousBounds;
+            WindowState = FormWindowState.Normal;
             isMaximized = false;
         }
         else
         {
             previousBounds = Bounds;
-            Bounds = Screen.FromHandle(Handle).WorkingArea;
+            WindowState = FormWindowState.Maximized;
             isMaximized = true;
         }
 
@@ -2037,7 +2146,7 @@ public sealed class MultiViewForm : Form
         }
 
         previousBounds = Bounds;
-        Bounds = Screen.FromHandle(Handle).WorkingArea;
+        WindowState = FormWindowState.Maximized;
         isMaximized = true;
         UpdateMaxButtonIcon();
     }
@@ -2056,6 +2165,122 @@ public sealed class MultiViewForm : Form
         TopMost = isPinned;
         btnPin.BackColor = isPinned ? btnActive : btnNormal;
         btnPin.Text = isPinned ? "📍" : "📌";
+    }
+
+    private void ToggleProfileTileActive(string profileId)
+    {
+        if (!profiles.Any(profile => profile.Id == profileId))
+        {
+            inactiveProfileIds.Remove(profileId);
+            activeButtonsByProfileId.Remove(profileId);
+            return;
+        }
+
+        if (inactiveProfileIds.Contains(profileId))
+        {
+            inactiveProfileIds.Remove(profileId);
+        }
+        else
+        {
+            inactiveProfileIds.Add(profileId);
+        }
+
+        ApplyAllProfileTileActiveVisibility();
+    }
+
+    private void ActivateProfileTile(string profileId)
+    {
+        if (!profiles.Any(profile => profile.Id == profileId))
+        {
+            inactiveProfileIds.Remove(profileId);
+            activeButtonsByProfileId.Remove(profileId);
+            return;
+        }
+
+        if (inactiveProfileIds.Remove(profileId))
+        {
+            ApplyAllProfileTileActiveVisibility();
+        }
+    }
+
+    private void ApplyAllProfileTileActiveVisibility()
+    {
+        var profileIds = profiles.Select(profile => profile.Id).ToHashSet();
+        inactiveProfileIds.RemoveWhere(id => !profileIds.Contains(id));
+
+        var count = Math.Min(webViews.Count, profiles.Count);
+        for (var index = 0; index < count; index++)
+        {
+            ApplyProfileTileActiveVisibility(webViews[index], profiles[index].Id);
+        }
+    }
+
+    private void ApplyProfileTileActiveVisibility(WebView2 webView, string profileId)
+    {
+        var isActive = !inactiveProfileIds.Contains(profileId);
+        UpdateProfileTileActiveButton(profileId, isActive);
+
+        if (inactiveOverlaysByWebView.TryGetValue(webView, out var overlay) && !overlay.IsDisposed)
+        {
+            overlay.Visible = !isActive;
+            if (!isActive)
+            {
+                overlay.BringToFront();
+            }
+        }
+
+        if (webView.IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            webView.Visible = isActive;
+        }
+        catch
+        {
+        }
+
+        _ = ApplyProfileRuntimeAudioStateAsync(webView, profileId);
+    }
+
+    private bool IsRuntimeMuted(WebView2 webView, string profileId)
+    {
+        return isMinimizedToTray ||
+            inactiveProfileIds.Contains(profileId) ||
+            mutedByWebView.GetValueOrDefault(webView);
+    }
+
+    private async Task ApplyProfileRuntimeAudioStateAsync(WebView2 webView, string profileId)
+    {
+        if (webView.IsDisposed)
+        {
+            return;
+        }
+
+        var profile = profiles.FirstOrDefault(item => item.Id == profileId);
+        if (profile is null)
+        {
+            return;
+        }
+
+        await WebViewVolumeController.ApplyAsync(
+            webView,
+            volumeByWebView.GetValueOrDefault(webView, 100),
+            IsRuntimeMuted(webView, profileId),
+            profile.Name);
+    }
+
+    private void UpdateProfileTileActiveButton(string profileId, bool isActive)
+    {
+        if (!activeButtonsByProfileId.TryGetValue(profileId, out var button) || button.IsDisposed)
+        {
+            return;
+        }
+
+        button.Text = isActive ? "ACT" : "IDLE";
+        button.BackColor = isActive ? btnActive : Color.FromArgb(64, 48, 34);
     }
 
     private void ShowTrayModeMenu()
@@ -2122,6 +2347,9 @@ public sealed class MultiViewForm : Form
 
         pendingTitleBarDragStart = null;
         ResetTitleButtonColors();
+        windowStateBeforeTray = WindowState == FormWindowState.Minimized
+            ? FormWindowState.Normal
+            : WindowState;
         isMinimizedToTray = true;
         isKeepRunningInTray = keepRunning;
         trayIcon.Visible = true;
@@ -2131,6 +2359,14 @@ public sealed class MultiViewForm : Form
         {
             opacityBeforeTray = Opacity;
             Opacity = 0;
+            if (WindowState == FormWindowState.Maximized)
+            {
+                boundsBeforeTray = RestoreBounds.Width > 0 && RestoreBounds.Height > 0
+                    ? RestoreBounds
+                    : Bounds;
+                WindowState = FormWindowState.Normal;
+            }
+
             MoveOffscreenForTray();
             ShowInTaskbar = false;
             Opacity = opacityBeforeTray;
@@ -2138,7 +2374,7 @@ public sealed class MultiViewForm : Form
             return;
         }
 
-        Hide();
+        HideForDefaultTrayMode();
         ShowInTaskbar = false;
         TrayStateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -2186,8 +2422,30 @@ public sealed class MultiViewForm : Form
     {
         isKeepRunningInTray = false;
         RestoreBoundsBeforeDefaultTrayHide();
-        Hide();
+        HideForDefaultTrayMode();
         ShowInTaskbar = false;
+    }
+
+    private void HideForDefaultTrayMode()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            if (boundsBeforeTray is null)
+            {
+                boundsBeforeTray = RestoreBounds.Width > 0 && RestoreBounds.Height > 0
+                    ? RestoreBounds
+                    : Bounds;
+            }
+
+            opacityBeforeTray = Opacity;
+            Opacity = 0;
+            WindowState = FormWindowState.Normal;
+            Hide();
+            Opacity = opacityBeforeTray;
+            return;
+        }
+
+        Hide();
     }
 
     private void UpdateTrayKeepRunningItemCheck()
@@ -2210,6 +2468,7 @@ public sealed class MultiViewForm : Form
 
         isMinimizedToTray = false;
         isKeepRunningInTray = false;
+        var restoreMaximized = windowStateBeforeTray == FormWindowState.Maximized;
         if (boundsBeforeTray is { } restoreBounds)
         {
             Opacity = 0;
@@ -2217,12 +2476,21 @@ public sealed class MultiViewForm : Form
             Bounds = restoreBounds;
             boundsBeforeTray = null;
             ShowInTaskbar = true;
+            if (restoreMaximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
+
             Opacity = opacityBeforeTray;
         }
         else
         {
             ShowInTaskbar = true;
             Show();
+            if (restoreMaximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
         }
 
         _ = ApplyTrayMuteStateAsync(false);
@@ -2293,7 +2561,9 @@ public sealed class MultiViewForm : Form
             }
 
             var profile = profiles[index];
-            var effectiveMuted = muted || mutedByWebView.GetValueOrDefault(webView);
+            var effectiveMuted = muted ||
+                inactiveProfileIds.Contains(profile.Id) ||
+                mutedByWebView.GetValueOrDefault(webView);
 
             await WebViewVolumeController.ApplyAsync(
                 webView,

@@ -16,4 +16,18 @@ public sealed class Profile
     public bool ShowStatsGpuMemory { get; set; }
     public bool ShowStatsHorizontal { get; set; }
     public bool UseHighGpuWebViewArguments { get; set; } = true;
+    public WebViewPerformanceMode? WebViewMode { get; set; }
+
+    public WebViewPerformanceMode GetWebViewMode()
+    {
+        return WebViewMode ?? (UseHighGpuWebViewArguments
+            ? WebViewPerformanceMode.Gpu
+            : WebViewPerformanceMode.Default);
+    }
+
+    public void SetWebViewMode(WebViewPerformanceMode mode)
+    {
+        WebViewMode = mode;
+        UseHighGpuWebViewArguments = mode == WebViewPerformanceMode.Gpu;
+    }
 }
