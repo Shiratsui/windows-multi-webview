@@ -14,14 +14,24 @@ public static class WebViewEnvironmentFactory
         "--ignore-gpu-blocklist " +
         "--autoplay-policy=no-user-gesture-required";
 
-    public static Task<CoreWebView2Environment> CreateAsync(string userDataFolder, bool useHighGpuArguments)
+    private const string LiteBrowserArguments =
+        "--autoplay-policy=no-user-gesture-required";
+
+    public static Task<CoreWebView2Environment> CreateAsync(string userDataFolder, WebViewPerformanceMode mode)
     {
-        var options = useHighGpuArguments
-            ? new CoreWebView2EnvironmentOptions
+        var arguments = mode switch
+        {
+            WebViewPerformanceMode.Gpu => HighGpuBrowserArguments,
+            WebViewPerformanceMode.Lite => LiteBrowserArguments,
+            _ => null
+        };
+
+        var options = string.IsNullOrWhiteSpace(arguments)
+            ? null
+            : new CoreWebView2EnvironmentOptions
             {
-                AdditionalBrowserArguments = HighGpuBrowserArguments
-            }
-            : null;
+                AdditionalBrowserArguments = arguments
+            };
 
         return CoreWebView2Environment.CreateAsync(
             userDataFolder: userDataFolder,

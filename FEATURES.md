@@ -13,7 +13,7 @@ The profile picker is the main window. It lists saved profiles as cards with sta
 - `TRAY`: profile is active in a browser window that is currently in the tray.
 - `KEEP RUNNING`: the owning browser window is in keep-running tray mode.
 
-Open profiles cannot be selected, edited, deleted, or switched between `GPU` and `DEF` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks.
+Open profiles cannot be selected, edited, deleted, or switched between `GPU`, `DEF`, and `LITE` until their browser window is closed. Locked card actions stay visually readable, show a blocked cursor, and ignore clicks.
 
 Hovering an open profile shows a compact dark usage popup with CPU, memory, GPU, and GPU memory values for that profile's WebView2 processes. The popup header shows the profile name and state above a divider, with metrics below.
 
@@ -62,13 +62,21 @@ Multi-profile source windows merge as a group, so a two-profile window can be dr
 
 ## Per-Profile WebView Mode
 
-Closed profiles can be switched between `GPU` and `DEF` from the profile card.
+Closed profiles can be switched between `GPU`, `DEF`, and `LITE` from the profile card.
 
 `GPU` mode creates WebView2 with the app's high-GPU/browser-throttling arguments, including GPU rasterization, zero-copy, ignored GPU blocklist, reduced background throttling, and autoplay-friendly audio-session setup.
 
 `DEF` mode creates a plain default WebView2 environment without those extra arguments.
 
-The setting is saved per profile as `UseHighGpuWebViewArguments`. Already-open WebViews keep the environment they were created with until the tile is refreshed or the profile is closed and reopened.
+`LITE` mode keeps the autoplay-friendly audio-session setup but avoids the high-GPU and anti-throttling arguments. It keeps the WebView loaded and network-capable, but Chromium may still reduce background rendering work when the tile or window is not visible.
+
+The setting is saved per profile as `WebViewMode`. Already-open WebViews keep the environment they were created with until the tile is refreshed or the profile is closed and reopened.
+
+## Active Profile Mode
+
+Each multi-view tile includes an `ACT` header button. Click it to switch that tile to `IDLE`, which hides that tile's WebView behind a click-to-activate placeholder and runtime-mutes it while leaving the profile loaded. Click the placeholder or the `IDLE` button to make that tile active again and restore its normal saved/current mute state. Multiple tiles can remain active at the same time.
+
+Inactive state belongs to the current browser window only. If a profile is popped out or moved to another window, the source window drops that tile's inactive state.
 
 ## Live Diagnostics
 

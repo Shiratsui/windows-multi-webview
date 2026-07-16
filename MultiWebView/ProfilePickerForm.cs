@@ -46,6 +46,7 @@ public sealed class ProfilePickerForm : Form
     private Point? pendingTitleBarDragStart;
     private Rectangle previousBounds;
     private FormWindowState windowStateBeforeTray = FormWindowState.Normal;
+    private double opacityBeforeTray = 1;
     private bool isPinned;
     private bool isMaximized;
     private bool isMinimizedToTray;
@@ -543,28 +544,16 @@ public sealed class ProfilePickerForm : Form
 
         var webViewModeButton = new Button
         {
-            Text = profile.UseHighGpuWebViewArguments ? "GPU" : "DEF",
+            Text = GetWebViewModeLabel(profile.GetWebViewMode()),
             FlatStyle = FlatStyle.Flat,
-            BackColor = isOpen
-                ? profile.UseHighGpuWebViewArguments
-                    ? Color.FromArgb(36, 55, 76)
-                    : Color.FromArgb(48, 48, 48)
-                : profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(42, 72, 112)
-                : Color.FromArgb(45, 45, 45),
+            BackColor = GetWebViewModeBackColor(profile.GetWebViewMode(), isOpen),
             ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White,
             Font = new Font("Segoe UI", 8F, FontStyle.Bold),
             Size = new Size(68, 24),
             Location = new Point(146, 42),
             Cursor = isOpen ? Cursors.No : Cursors.Hand
         };
-        webViewModeButton.FlatAppearance.BorderColor = isOpen
-            ? profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(72, 98, 128)
-                : Color.FromArgb(82, 82, 82)
-            : profile.UseHighGpuWebViewArguments
-            ? Color.FromArgb(78, 120, 170)
-            : Color.FromArgb(75, 75, 75);
+        webViewModeButton.FlatAppearance.BorderColor = GetWebViewModeBorderColor(profile.GetWebViewMode(), isOpen);
         webViewModeButton.FlatAppearance.BorderSize = 1;
         webViewModeButton.FlatAppearance.MouseOverBackColor = webViewModeButton.BackColor;
         webViewModeButton.FlatAppearance.MouseDownBackColor = webViewModeButton.BackColor;
@@ -659,25 +648,44 @@ public sealed class ProfilePickerForm : Form
         ApplyProfileActionState(view.EditButton, isOpen, Color.FromArgb(45, 45, 45), Color.FromArgb(48, 48, 48));
         ApplyProfileActionState(view.DeleteButton, isOpen, Color.FromArgb(75, 35, 35), Color.FromArgb(64, 47, 47));
 
-        view.WebViewModeButton.Text = profile.UseHighGpuWebViewArguments ? "GPU" : "DEF";
-        view.WebViewModeButton.BackColor = isOpen
-            ? profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(36, 55, 76)
-                : Color.FromArgb(48, 48, 48)
-            : profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(42, 72, 112)
-                : Color.FromArgb(45, 45, 45);
+        var mode = profile.GetWebViewMode();
+        view.WebViewModeButton.Text = GetWebViewModeLabel(mode);
+        view.WebViewModeButton.BackColor = GetWebViewModeBackColor(mode, isOpen);
         view.WebViewModeButton.ForeColor = isOpen ? Color.FromArgb(170, 170, 170) : Color.White;
         view.WebViewModeButton.Cursor = isOpen ? Cursors.No : Cursors.Hand;
-        view.WebViewModeButton.FlatAppearance.BorderColor = isOpen
-            ? profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(72, 98, 128)
-                : Color.FromArgb(82, 82, 82)
-            : profile.UseHighGpuWebViewArguments
-                ? Color.FromArgb(78, 120, 170)
-                : Color.FromArgb(75, 75, 75);
+        view.WebViewModeButton.FlatAppearance.BorderColor = GetWebViewModeBorderColor(mode, isOpen);
         view.WebViewModeButton.FlatAppearance.MouseOverBackColor = view.WebViewModeButton.BackColor;
         view.WebViewModeButton.FlatAppearance.MouseDownBackColor = view.WebViewModeButton.BackColor;
+    }
+
+    private static string GetWebViewModeLabel(WebViewPerformanceMode mode)
+    {
+        return mode switch
+        {
+            WebViewPerformanceMode.Gpu => "GPU",
+            WebViewPerformanceMode.Lite => "LITE",
+            _ => "DEF"
+        };
+    }
+
+    private static Color GetWebViewModeBackColor(WebViewPerformanceMode mode, bool isOpen)
+    {
+        return mode switch
+        {
+            WebViewPerformanceMode.Gpu => isOpen ? Color.FromArgb(36, 55, 76) : Color.FromArgb(42, 72, 112),
+            WebViewPerformanceMode.Lite => isOpen ? Color.FromArgb(45, 62, 42) : Color.FromArgb(56, 88, 48),
+            _ => isOpen ? Color.FromArgb(48, 48, 48) : Color.FromArgb(45, 45, 45)
+        };
+    }
+
+    private static Color GetWebViewModeBorderColor(WebViewPerformanceMode mode, bool isOpen)
+    {
+        return mode switch
+        {
+            WebViewPerformanceMode.Gpu => isOpen ? Color.FromArgb(72, 98, 128) : Color.FromArgb(78, 120, 170),
+            WebViewPerformanceMode.Lite => isOpen ? Color.FromArgb(77, 100, 72) : Color.FromArgb(92, 136, 82),
+            _ => isOpen ? Color.FromArgb(82, 82, 82) : Color.FromArgb(75, 75, 75)
+        };
     }
 
     private static void ApplyProfileActionState(Button button, bool isOpen, Color closedBackColor, Color openBackColor)
@@ -764,14 +772,24 @@ public sealed class ProfilePickerForm : Form
 
     private void ToggleProfileWebViewMode(Profile profile)
     {
-        var useHighGpuArguments = !profile.UseHighGpuWebViewArguments;
-        profileStore.UpdateProfileWebViewMode(profile, useHighGpuArguments);
+        var mode = GetNextWebViewMode(profile.GetWebViewMode());
+        profileStore.UpdateProfileWebViewMode(profile, mode);
         if (openProfileWindows.TryGetValue(profile.Id, out var window) && !window.IsDisposed)
         {
-            window.UpdateProfileWebViewMode(profile.Id, useHighGpuArguments);
+            window.UpdateProfileWebViewMode(profile.Id, mode);
         }
 
         LoadProfiles();
+    }
+
+    private static WebViewPerformanceMode GetNextWebViewMode(WebViewPerformanceMode mode)
+    {
+        return mode switch
+        {
+            WebViewPerformanceMode.Gpu => WebViewPerformanceMode.Default,
+            WebViewPerformanceMode.Default => WebViewPerformanceMode.Lite,
+            _ => WebViewPerformanceMode.Gpu
+        };
     }
 
     private void EditProfile(Profile profile)
@@ -1301,11 +1319,15 @@ public sealed class ProfilePickerForm : Form
         if (isMaximized)
         {
             var mouseScreen = Cursor.Position;
-            var width = previousBounds.Width > 0 ? previousBounds.Width : Width;
-            var height = previousBounds.Height > 0 ? previousBounds.Height : Height;
+            var restoreBounds = previousBounds.Width > 0 && previousBounds.Height > 0
+                ? previousBounds
+                : RestoreBounds;
+            var width = restoreBounds.Width > 0 ? restoreBounds.Width : Width;
+            var height = restoreBounds.Height > 0 ? restoreBounds.Height : Height;
             var newX = mouseScreen.X - width / 2;
             var newY = mouseScreen.Y - 15;
 
+            WindowState = FormWindowState.Normal;
             Bounds = new Rectangle(newX, newY, width, height);
             isMaximized = false;
             UpdateMaxButtonIcon();
@@ -1319,17 +1341,44 @@ public sealed class ProfilePickerForm : Form
     {
         if (isMaximized)
         {
-            Bounds = previousBounds;
+            WindowState = FormWindowState.Normal;
             isMaximized = false;
         }
         else
         {
             previousBounds = Bounds;
-            Bounds = Screen.FromHandle(Handle).WorkingArea;
+            WindowState = FormWindowState.Maximized;
             isMaximized = true;
         }
 
         UpdateMaxButtonIcon();
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == BorderlessMaximizeHelper.WmGetMinMaxInfo)
+        {
+            BorderlessMaximizeHelper.ApplyWorkingAreaMaxBounds(this, ref m);
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+
+        if (WindowState == FormWindowState.Maximized)
+        {
+            isMaximized = true;
+            UpdateMaxButtonIcon();
+        }
+        else if (WindowState == FormWindowState.Normal && isMaximized)
+        {
+            isMaximized = false;
+            UpdateMaxButtonIcon();
+        }
     }
 
     private void UpdateMaxButtonIcon()
@@ -1406,6 +1455,16 @@ public sealed class ProfilePickerForm : Form
 
     private void ForceHideToTray()
     {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            opacityBeforeTray = Opacity;
+            Opacity = 0;
+            WindowState = FormWindowState.Normal;
+            Hide();
+            Opacity = opacityBeforeTray;
+            return;
+        }
+
         Hide();
     }
 

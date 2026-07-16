@@ -58,7 +58,8 @@ Current fields:
 - `ShowStatsGpu`: saved stats overlay GPU utilization setting.
 - `ShowStatsGpuMemory`: saved stats overlay GPU memory setting.
 - `ShowStatsHorizontal`: saved stats overlay horizontal layout setting.
-- `UseHighGpuWebViewArguments`: saved per-profile WebView mode. `true` uses the app's high-GPU/browser-throttling arguments; `false` uses plain default WebView2 settings.
+- `WebViewMode`: saved per-profile WebView mode. `GPU` uses the app's high-GPU/browser-throttling arguments, `Default` uses plain default WebView2 settings, and `Lite` avoids the high-GPU and anti-throttling arguments while keeping autoplay-friendly audio-session setup.
+- `UseHighGpuWebViewArguments`: legacy compatibility field used to migrate older saved profiles into `WebViewMode`.
 
 The profile ID is used as the persistent folder name and the key for open/selected profile tracking.
 
@@ -113,7 +114,7 @@ Responsibilities:
 
 - Load saved profiles.
 - Create, edit, and delete profiles. Edit and delete actions are locked for currently open profiles.
-- Toggle each closed profile's WebView mode between `GPU` and `DEF`; the mode button is locked while that profile is open.
+- Toggle each closed profile's WebView mode between `GPU`, `DEF`, and `LITE`; the mode button is locked while that profile is open.
 - Track selected profiles for multi-view.
 - Track currently open profile IDs so a profile cannot be opened twice at the same time.
 - Track open profile windows so clicking an already-open profile can restore or focus the existing `MultiViewForm`.
@@ -177,7 +178,11 @@ Initialization flow:
 6. Each profile gets its own WebView2 environment and user data folder.
 7. Each WebView ensures CoreWebView2, creates the early silent audio session, applies saved audio state, and then navigates.
 
-The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, pop-out button, stats menu, mute button, volume value, and volume slider.
+The multi-view window has a single outer title bar with taskbar minimize, tray-mode dropdown, pin, maximize/restore, and close controls. Each tile has its own name, refresh button, screenshot button, profile folder button, pop-out button, active/inactive toggle, stats menu, mute button, volume value, and volume slider.
+
+Active-profile mode is a per-tile rendering-pressure control. Each tile's `ACT` header button toggles that tile to `IDLE`; inactive tiles show click-to-activate placeholders, set their WebView control invisible, and are runtime-muted through the same audio state path used by tray mode. The inactive WebView controls are not disposed and their profiles remain owned by the same window. Multiple tiles can remain active at once. This is intended to reduce visible rendering/compositing pressure without using WebView2 suspension.
+
+Inactive tile state is tracked by profile ID in the owning `MultiViewForm`. When a tile is refreshed, the inactive placeholder is carried to the recreated WebView. When a profile is popped out, removed, or moved to another window, its inactive state and header button mapping are removed from the source window. Queued clicks against removed tiles defensively check that the profile still belongs to the window before changing inactive state.
 
 The tile refresh button performs a full WebView recreation rather than a page reload. `RecreateWebViewAsync(...)` closes open stats menus, creates a new `WebView2`, replaces the old control in `webViews`, carries over the current volume, mute, and stats state, attaches audio enforcement, removes and disposes the old control and stats timer, then calls `InitializeWebViewAsync(...)` for the new control. Initial startup and refresh use the same initialization path so WebView2 environment creation, early audio-session setup, saved audio application, stats overlay setup, and navigation stay consistent.
 
@@ -192,8 +197,9 @@ Drag-to-combine moves the whole source window as a contiguous group. A two-profi
 Stale callback hardening:
 
 - WebView initialization checks form, WebView, and stats-state lifetime after each awaited operation before attaching CoreWebView2 event handlers or configuring the browser.
-- Navigation, stats timer, stats menu, profile usage popup, drag-combine, and single-instance activation callbacks all tolerate controls being disposed or profile ownership being moved before the callback runs.
+- Navigation, stats timer, stats menu, profile usage popup, per-tile active/inactive toggles, drag-combine, and single-instance activation callbacks all tolerate controls being disposed or profile ownership being moved before the callback runs.
 - Code that walks parallel `profiles` and `webViews` lists clamps to the shorter list, and profile usage lookups re-check index and WebView lifetime before sampling process stats.
+- Per-tile inactive state is pruned against the current profile list before visibility is reapplied, so stale profile IDs from removed or moved tiles cannot affect later windows or reinserted profiles.
 - Diagnostic sampling is fail-soft: unexpected process, GPU, or script-injection failures are ignored for that tick and display unavailable values instead of escaping timer callbacks.
 
 `WindowIdentity.BuildMultiViewTitle(...)` builds the multi-view form title from the opened profile names. `WindowIdentity.BuildTrayText(...)` reuses that title for the tray icon tooltip and truncates it to the Windows notify-icon text limit.
@@ -247,7 +253,7 @@ Multi-view tray behavior:
 
 ## WebView2 Environment
 
-`WebViewEnvironmentFactory` creates a `CoreWebView2Environment` with profile-specific user data. `Profile.UseHighGpuWebViewArguments` controls whether the factory passes additional browser arguments or creates a plain default WebView2 environment.
+`WebViewEnvironmentFactory` creates a `CoreWebView2Environment` with profile-specific user data. `Profile.WebViewMode` controls whether the factory passes high-GPU browser arguments, no additional arguments, or lightweight live arguments.
 
 High-GPU browser arguments currently configured:
 
@@ -262,7 +268,9 @@ High-GPU browser arguments currently configured:
 
 The autoplay flag is important for the early silent Web Audio session. Without it, Chromium can suspend the audio context until a user gesture, which would delay Windows Volume Mixer session creation.
 
-Changing a profile card's `GPU` / `DEF` setting affects newly created WebView2 environments for that profile only. Already-open WebViews keep their existing environment until the tile is refreshed or the profile is closed and reopened.
+`Lite` mode currently passes only the autoplay-friendly audio-session argument. It intentionally does not disable Chromium background throttling or force GPU rasterization.
+
+Changing a profile card's `GPU` / `DEF` / `LITE` setting affects newly created WebView2 environments for that profile only. Already-open WebViews keep their existing environment until the tile is refreshed or the profile is closed and reopened.
 
 ## Audio Design
 
@@ -291,7 +299,7 @@ Timer behavior:
 - Interval: 1000 ms.
 - Before `CoreWebView2` exists, apply calls no-op.
 - After CoreWebView2 exists, the timer reapplies volume/mute/display-name state every second.
-- For multi-view windows hidden to tray, the effective mute state is `isMinimizedToTray || profileMuteState`; this is intentionally runtime-only and does not overwrite the saved profile mute setting.
+- For multi-view windows hidden to tray or individual tiles switched to `IDLE`, the effective mute state is `isMinimizedToTray || isTileIdle || profileMuteState`; this is intentionally runtime-only and does not overwrite the saved profile mute setting.
 - A simple `isApplying` flag prevents overlapping timer work.
 - The timer is stopped and disposed when the WebView control is disposed.
 
@@ -355,21 +363,23 @@ Pinning sets `TopMost`.
 Profile picker close behavior:
 
 - The custom close button hides the picker to the system tray.
-- The picker stores the previous `WindowState`, hides directly with `Hide()` without setting `WindowState.Minimized`, and restores the previous state from the tray.
-- The picker does not toggle `ShowInTaskbar` during tray hide. A hidden form is already removed from the taskbar, and avoiding that taskbar-style transition prevents maximized borderless picker windows from briefly flashing back onscreen.
+- The picker stores the previous `WindowState`, hides without setting `WindowState.Minimized`, and restores the previous state from the tray.
+- The picker does not toggle `ShowInTaskbar` during tray hide. A hidden form is already removed from the taskbar.
+- If the picker is maximized when sent to tray, it is made transparent, temporarily returned to `Normal`, hidden, then restored to its previous opacity. This avoids a Windows borderless-maximized transition that can re-show the form after the tray icon appears.
 - The close button hover color is reset before hiding and after restore because hiding the form can skip normal mouse-leave handling.
 - `Alt+F4` and tray menu `Exit` close the application.
 
 Multi-view tray behavior:
 
 - The normal minimize button minimizes the multi-view window to the taskbar.
-- The separate tray button opens a dropdown with two modes in a fixed order: `Default`, then `Keep running`. `Keep running` sets `ShowInTaskbar = false` and moves the multi-view window outside the virtual desktop instead of calling `Hide()`. Keeping the native host window visible avoids pushing WebView2 into the fully hidden-window path, which can throttle page timers or rendering. `Default` calls `Hide()` after removing the window from normal interaction, which saves rendering resources while keeping page and network activity alive. The last selected mode is persisted as `KeepWebViewsRunningInTray`.
+- The separate tray button opens a dropdown with two modes in a fixed order: `Default`, then `Keep running`. `Keep running` sets `ShowInTaskbar = false` and moves the multi-view window outside the virtual desktop instead of calling `Hide()`. Keeping the native host window visible avoids pushing WebView2 into the fully hidden-window path, which can throttle page timers or rendering. `Default` calls `Hide()` after removing the window from normal interaction, which saves rendering resources while keeping page and network activity alive. For maximized windows, both tray modes save the maximized state, invisibly normalize the form when needed, and reapply maximized state on restore. The last selected mode is persisted as `KeepWebViewsRunningInTray`.
 - The multi-view tray icon has a checked `Keep Running` toggle, `Restore`, and `Close` menu items and restores on double-click. Switching from `Default` to `Keep running` shows the hidden form invisibly, moves it offscreen, removes it from the taskbar, and refreshes picker chips through `TrayStateChanged`. Switching back to `Default` first moves the offscreen form back to its saved restore bounds, temporarily returns it to the normal taskbar-visible window state, then hides it through the same normal hidden path used by default tray minimize.
 - Tray-mode multi-view windows are force-muted through the same `WebViewVolumeController` state path used by the periodic audio enforcement timer.
 
 Maximize behavior:
 
-- `ProfilePickerForm` and `MultiViewForm` manually store previous bounds and set bounds to `Screen.WorkingArea`, so borderless maximized windows respect the taskbar instead of covering it.
+- `ProfilePickerForm` and `MultiViewForm` use real `FormWindowState.Maximized` for maximize/restore behavior.
+- `BorderlessMaximizeHelper` handles `WM_GETMINMAXINFO` so borderless maximized windows are constrained to the monitor working area and still respect the taskbar.
 - `MultiViewForm` performs its initial maximize during `Load`, before the form is first shown, so profile opening does not briefly display the normal startup size before expanding.
 
 ## Build And Run
