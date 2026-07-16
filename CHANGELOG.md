@@ -4,10 +4,14 @@ Change notes for Multi WebView releases. Tagged sections describe released versi
 
 ## Unreleased
 
+## v0.8.0
+
 - Added a per-profile `LITE` WebView mode that avoids high-GPU and anti-throttling browser arguments while keeping autoplay-friendly audio-session setup.
 - Added per-tile active-profile mode for multi-view windows, letting individual tiles be made inactive while their WebViews remain loaded behind click-to-activate placeholders.
 - Hardened per-tile active-profile state against stale queued clicks, WebView refreshes, pop-out, and drag-to-combine profile moves.
 - Runtime-muted `IDLE` tiles through the same audio enforcement path used by tray mode.
+- Switched borderless maximize to real maximized window state while preserving taskbar-aware working-area bounds.
+- Fixed maximized picker and multi-view windows reappearing after being sent to the tray.
 
 ## v0.7.0
 
